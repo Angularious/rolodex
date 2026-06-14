@@ -305,6 +305,9 @@ export default function Home() {
                     turnstile.current?.reset();
                   }}
                   refreshExpired="auto"
+                  // Invisible unless a real interactive challenge is needed —
+                  // the compliant way to hide the widget (vs CSS, which breaks it).
+                  appearance="interaction-only"
                   theme="light"
                 />
               </div>
