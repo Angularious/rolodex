@@ -30,6 +30,17 @@ export async function callOrthogonal<T = unknown>(
     throw new OrthogonalError('ORTHOGONAL_API_KEY is not configured', 500);
   }
 
+  // Orthogonal's /v1/run validates GET query values as strings, so coerce them
+  // (a numeric `limit`, for example, is rejected as "Expected string").
+  let payloadParams: Record<string, unknown> = params;
+  if (method === 'GET') {
+    payloadParams = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === null || v === undefined) continue;
+      payloadParams[k] = typeof v === 'string' ? v : String(v);
+    }
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let res: Response;
@@ -40,7 +51,7 @@ export async function callOrthogonal<T = unknown>(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
       },
-      body: JSON.stringify({ api, path, [method === 'GET' ? 'query' : 'body']: params }),
+      body: JSON.stringify({ api, path, [method === 'GET' ? 'query' : 'body']: payloadParams }),
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -49,11 +60,13 @@ export async function callOrthogonal<T = unknown>(
   }
 
   if (!res.ok) {
+    console.error(`[orthogonal] HTTP ${res.status} for ${api}${path}`);
     throw new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status);
   }
 
-  const json = (await res.json()) as { success?: boolean; data?: unknown };
+  const json = (await res.json()) as { success?: boolean; data?: unknown; error?: unknown };
   if (json.success === false) {
+    console.error(`[orthogonal] failed ${api}${path}:`, JSON.stringify(json.error));
     throw new OrthogonalError(`Orthogonal call failed for ${api}${path}`, 502);
   }
   return json.data as T;
