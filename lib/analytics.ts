@@ -1,6 +1,7 @@
-// Lightweight event log + daily counters in Redis, surfaced on /admin.
+// Search event log in Supabase, surfaced on /admin. Conversions (clicks to
+// orthogonal.com) are stored as events with the pseudo-domain '__conversion__'.
 
-import { kv } from './redis';
+import { getSupabase } from './supabase';
 
 export interface SearchEvent {
   ts: number;
@@ -12,38 +13,57 @@ export interface SearchEvent {
   error?: string;
 }
 
-const EVENTS_KEY = 'events';
-const MAX_EVENTS = 500;
-
-function dayBucket(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    d.getUTCDate(),
-  ).padStart(2, '0')}`;
-}
-
 export async function logSearch(ev: SearchEvent): Promise<void> {
-  const store = kv();
-  const day = dayBucket(ev.ts);
+  const sb = getSupabase();
+  if (!sb) return;
   try {
-    await store.pushCapped(EVENTS_KEY, ev, MAX_EVENTS);
-    await store.incr(`stat:searches:${day}`, 60 * 60 * 24 * 30);
-    if (!ev.success) await store.incr(`stat:error:${day}`, 60 * 60 * 24 * 30);
-    await store.incr(`stat:domain:${ev.domain}`, 60 * 60 * 24 * 30);
+    await sb.from('search_events').insert({
+      ip_hash: ev.ipHash,
+      domain: ev.domain,
+      duration_ms: ev.durationMs,
+      cost_usd: ev.cost,
+      success: ev.success,
+    });
   } catch {
     // Analytics must never break a search.
   }
 }
 
-export async function logConversion(): Promise<void> {
-  const day = dayBucket(Date.now());
-  try {
-    await kv().incr(`stat:conversion:${day}`, 60 * 60 * 24 * 30);
-  } catch {
-    /* ignore */
-  }
+export async function logConversion(ipHash: string): Promise<void> {
+  await logSearch({
+    ts: Date.now(),
+    ipHash,
+    domain: '__conversion__',
+    durationMs: 0,
+    cost: 0,
+    success: true,
+  });
 }
 
-export async function recentEvents(limit = 100): Promise<SearchEvent[]> {
-  return kv().list<SearchEvent>(EVENTS_KEY, limit);
+interface Row {
+  ip_hash: string | null;
+  domain: string | null;
+  duration_ms: number | null;
+  cost_usd: number | string | null;
+  success: boolean | null;
+  created_at: string;
+}
+
+export async function recentEvents(limit = 500): Promise<SearchEvent[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from('search_events')
+    .select('ip_hash, domain, duration_ms, cost_usd, success, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error || !data) return [];
+  return (data as Row[]).map((r) => ({
+    ts: Date.parse(r.created_at),
+    ipHash: r.ip_hash ?? '',
+    domain: r.domain ?? '',
+    durationMs: r.duration_ms ?? 0,
+    cost: Number(r.cost_usd ?? 0),
+    success: r.success ?? true,
+  }));
 }

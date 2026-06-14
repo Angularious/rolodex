@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { recentEvents } from '@/lib/analytics';
 import { getSpendStatus } from '@/lib/spend';
-import { isPersistent } from '@/lib/redis';
+import { supabaseConfigured } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
   return new Response(
     JSON.stringify({
-      persistent: isPersistent(),
+      persistent: supabaseConfigured(),
       spend,
       totals: {
         searches: total,

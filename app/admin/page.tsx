@@ -83,8 +83,8 @@ export default function AdminPage() {
           <div className="mt-6 space-y-6">
             {!data.persistent && (
               <div className="retro-panel-flat p-3 bg-[#fff7c2] text-sm">
-                ⚠ Using in-memory store (no Upstash configured). Stats reset on redeploy and are
-                per-instance.
+                ⚠ No Supabase configured — rate limits, spend cap, and analytics are disabled
+                (dev mode). Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for production.
               </div>
             )}
 

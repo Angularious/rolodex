@@ -1,42 +1,36 @@
-// Per-IP rate limiting using fixed windows in Redis (or the in-memory fallback).
-// Limits: 3/min, 10/hour, 30/day.
+// Per-IP rate limiting via Supabase (3/min, 10/hour, 30/day).
+// One atomic RPC counts the three windows and logs the attempt if allowed.
+// In dev (no Supabase) we allow everything; on a DB error we fail OPEN here
+// because the global spend cap (a separate check) is the real money backstop.
 
-import { kv } from './redis';
-
-interface Window {
-  label: string;
-  limit: number;
-  seconds: number;
-}
-
-const WINDOWS: Window[] = [
-  { label: 'min', limit: 3, seconds: 60 },
-  { label: 'hour', limit: 10, seconds: 60 * 60 },
-  { label: 'day', limit: 30, seconds: 60 * 60 * 24 },
-];
+import { getSupabase } from './supabase';
 
 export interface RateLimitResult {
   ok: boolean;
   retryAfterSec?: number;
 }
 
-/**
- * Atomically increments all three windows for this identity and reports the
- * first one that is exceeded. `cost` lets callers consume more than one unit
- * (e.g. competitor clicks still count as a search).
- */
-export async function checkRateLimit(idHash: string, cost = 1): Promise<RateLimitResult> {
-  const store = kv();
-  for (const w of WINDOWS) {
-    const key = `rl:${w.label}:${idHash}`;
-    let count = 0;
-    for (let i = 0; i < cost; i++) {
-      count = await store.incr(key, w.seconds);
-    }
-    if (count > w.limit) {
-      const retryAfterSec = await store.ttl(key);
-      return { ok: false, retryAfterSec: retryAfterSec > 0 ? retryAfterSec : w.seconds };
-    }
+const PER_MIN = 3;
+const PER_HOUR = 10;
+const PER_DAY = 30;
+
+export async function checkRateLimit(idHash: string): Promise<RateLimitResult> {
+  const sb = getSupabase();
+  if (!sb) return { ok: true }; // local dev: no persistent store
+
+  const { data, error } = await sb.rpc('check_and_log_rate', {
+    p_id: idHash,
+    p_min: PER_MIN,
+    p_hour: PER_HOUR,
+    p_day: PER_DAY,
+  });
+
+  if (error) {
+    console.error('[ratelimit]', error.message);
+    return { ok: true }; // fail open; spend cap still bounds cost
   }
-  return { ok: true };
+
+  const res = data as { allowed?: boolean; retry_after_sec?: number } | null;
+  if (res?.allowed) return { ok: true };
+  return { ok: false, retryAfterSec: res?.retry_after_sec ?? 60 };
 }
