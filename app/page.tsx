@@ -24,7 +24,7 @@ import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 
 const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-const EXAMPLES = ['stripe.com', 'brattle.com', 'notion.so', 'figma.com'];
+const EXAMPLES = ['stripe.com', 'google.com', 'spacex.com', 'figma.com'];
 
 interface Report {
   domain: string;
@@ -243,7 +243,7 @@ export default function Home() {
             <form onSubmit={onSubmit} className="retro-panel p-3 sm:p-4 max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
               <input
                 className="retro-input"
-                placeholder="brattle.com  or  Stripe"
+                placeholder="google.com  or  SpaceX"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 autoFocus
