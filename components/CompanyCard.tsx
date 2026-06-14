@@ -41,17 +41,9 @@ export function CompanyCardSkeleton({ domain }: { domain: string }) {
   );
 }
 
-export default function CompanyCard({
-  company,
-  refreshing,
-  onRefresh,
-}: {
-  company: Company;
-  refreshing: boolean;
-  onRefresh: () => void;
-}) {
+export default function CompanyCard({ company }: { company: Company }) {
   const toast = useToast();
-  const updated = timeAgo(company.lastUpdated);
+  const indexed = timeAgo(company.lastUpdated);
 
   const copyPattern = () => {
     if (!company.emailPattern) return;
@@ -98,15 +90,7 @@ export default function CompanyCard({
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <button
-            className="retro-btn retro-btn-sm retro-btn-blue"
-            onClick={onRefresh}
-            disabled={refreshing}
-            title="Refresh employee data (once per 24h)"
-          >
-            {refreshing ? 'Refreshing…' : '↻ Refresh'}
-          </button>
-          {updated && <span className="text-[0.7rem] text-slate">Updated {updated}</span>}
+          {indexed && <span className="text-[0.7rem] text-slate">Tomba indexed {indexed}</span>}
           {socials.length > 0 && (
             <div className="flex gap-1.5 mt-1">
               {socials.map((s) => (

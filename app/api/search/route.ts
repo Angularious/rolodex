@@ -20,19 +20,6 @@ import {
   mapEmployees,
   type OrgExtras,
 } from '@/lib/tomba';
-import {
-  loadCompanyBundle,
-  loadEmployeeBundle,
-  saveCompanyBundle,
-  saveEmployeeBundle,
-  acquireFetchLock,
-  releaseFetchLock,
-  waitForBundles,
-  bustEmployeeBundle,
-  checkRefreshThrottle,
-  type CompanyBundle,
-  type EmployeeBundle,
-} from '@/lib/search';
 import { logSearch } from '@/lib/analytics';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
 
@@ -69,9 +56,7 @@ export async function POST(req: NextRequest) {
     return errorResponse({ error: 'bad_request', message: 'Cross-origin requests are not allowed.' }, 403);
   }
 
-  const body = (await req.json().catch(() => null)) as
-    | { input?: string; turnstileToken?: string; refresh?: boolean }
-    | null;
+  const body = (await req.json().catch(() => null)) as { input?: string; turnstileToken?: string } | null;
   if (!body || typeof body.input !== 'string') {
     return errorResponse({ error: 'bad_request' }, 400);
   }
@@ -124,188 +109,68 @@ export async function POST(req: NextRequest) {
     domain = norm.domain;
   }
 
-  // 5. Manual refresh: throttled to 1 per domain per IP per 24h, busts the
-  // employee cache so the next fetch pulls fresh emails (company stays cached).
-  if (body.refresh) {
-    const throttle = await checkRefreshThrottle(domain, idHash);
-    if (!throttle.ok) {
-      return errorResponse(
-        { error: 'rate_limited', message: 'This company was refreshed recently.', retryAfterSec: throttle.retryAfterSec },
-        429,
-      );
-    }
-    await bustEmployeeBundle(domain);
-  }
-
   // ---- Stream the report as NDJSON ----
+  // No caching or in-flight dedup: per Orthogonal's data policy we never persist
+  // returned data, so every search fires fresh Tomba calls.
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let paidCalls = nameResolutionCost;
-      let companyBundle = await loadCompanyBundle(domain);
-      let employeeBundle = await loadEmployeeBundle(domain);
-      const wantEmployees = true;
-
       const write = (msg: StreamMessage) =>
         controller.enqueue(encoder.encode(JSON.stringify(msg) + '\n'));
 
-      const cachedCompany = Boolean(companyBundle);
-      const cachedEmployees = Boolean(employeeBundle);
+      write({ type: 'meta', domain, resolvedFrom });
 
-      write({
-        type: 'meta',
-        domain,
-        cached: { company: cachedCompany, employees: cachedEmployees },
-        resolvedFrom,
-      });
-
-      let companyMiss = !companyBundle;
-      let employeeMiss = !employeeBundle;
-
-      // In-flight dedup for cold fetches.
-      let holdsLock = false;
-      if (companyMiss || employeeMiss) {
-        holdsLock = await acquireFetchLock(domain);
-        if (!holdsLock) {
-          const waited = await waitForBundles(domain, wantEmployees);
-          if (waited.company) {
-            companyBundle = waited.company;
-            companyMiss = false;
-          }
-          if (waited.employees) {
-            employeeBundle = waited.employees;
-            employeeMiss = false;
-          }
-          // If the winner still didn't fill everything, fall through and fetch.
-          if (companyMiss || employeeMiss) holdsLock = await acquireFetchLock(domain);
-        }
-      }
-
-      // Track the base company profile + org extras for the merge.
-      let companyBase: Company | null = companyBundle?.company ?? null;
-      let orgExtras: OrgExtras | null = employeeBundle?.org ?? null;
+      // The company card needs accept_all / email-pattern / richer socials that
+      // live on the domain-search response, so we merge org extras in and may
+      // re-emit the company once the employee call resolves.
+      let companyBase: Company | null = null;
+      let orgExtras: OrgExtras | null = null;
       let companyEmitted = false;
-
       const emitCompany = () => {
         if (!companyBase) return;
         write({ type: 'company', data: mergeCompany(companyBase, orgExtras) });
         companyEmitted = true;
       };
 
-      // Collectors for caching after the stream completes.
-      let newCounts = companyBundle?.counts ?? null;
-      let newCompetitors = companyBundle?.competitors ?? null;
-      let newLocations = companyBundle?.locations ?? null;
-      let newEmployees = employeeBundle?.employees ?? [];
-      let newTotal = employeeBundle?.totalAvailable ?? 0;
-
-      const jobs: Promise<unknown>[] = [];
-
-      // ---- Company-level (7-day) section ----
-      if (companyBundle) {
-        emitCompany();
-        write({ type: 'counts', data: companyBundle.counts });
-        write({ type: 'competitors', data: companyBundle.competitors });
-        write({ type: 'locations', data: companyBundle.locations });
-      } else {
-        jobs.push(
-          findCompany(domain)
-            .then((raw) => {
-              paidCalls++;
-              companyBase = mapCompany(raw, domain);
-              emitCompany();
-            })
-            .catch(() => write({ type: 'company', data: null, error: 'unavailable' })),
-        );
-        jobs.push(
-          emailCount(domain)
-            .then((raw) => {
-              paidCalls++;
-              newCounts = mapCounts(raw);
-              write({ type: 'counts', data: newCounts });
-            })
-            .catch(() => write({ type: 'counts', data: null, error: 'unavailable' })),
-        );
-        jobs.push(
-          similar(domain)
-            .then((raw) => {
-              paidCalls++;
-              newCompetitors = mapCompetitors(raw);
-              write({ type: 'competitors', data: newCompetitors });
-            })
-            .catch(() => write({ type: 'competitors', data: null, error: 'unavailable' })),
-        );
-        jobs.push(
-          locationDist(domain)
-            .then((raw) => {
-              paidCalls++;
-              newLocations = mapLocations(raw);
-              write({ type: 'locations', data: newLocations });
-            })
-            .catch(() => write({ type: 'locations', data: null, error: 'unavailable' })),
-        );
-      }
-
-      // ---- Employee (24-hour) section ----
-      if (employeeBundle) {
-        write({
-          type: 'employees',
-          data: employeeBundle.employees,
-          totalAvailable: employeeBundle.totalAvailable,
-        });
-        // org already merged into the cached-company emit above
-      } else {
-        jobs.push(
-          domainSearch(domain, EMPLOYEE_LIMIT)
-            .then((raw) => {
-              paidCalls++;
-              const mapped = mapEmployees(raw);
-              orgExtras = mapOrgExtras(raw);
-              newEmployees = mapped.employees;
-              newTotal = mapped.totalAvailable;
-              write({
-                type: 'employees',
-                data: mapped.employees,
-                totalAvailable: mapped.totalAvailable,
-              });
-              // Re-emit the company card now that we have accept_all / pattern /
-              // richer socials from the org block.
-              if (companyEmitted && orgExtras) emitCompany();
-            })
-            .catch(() =>
-              write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' }),
-            ),
-        );
-      }
+      const jobs: Promise<unknown>[] = [
+        findCompany(domain)
+          .then((raw) => {
+            paidCalls++;
+            companyBase = mapCompany(raw, domain);
+            emitCompany();
+          })
+          .catch(() => write({ type: 'company', data: null, error: 'unavailable' })),
+        emailCount(domain)
+          .then((raw) => {
+            paidCalls++;
+            write({ type: 'counts', data: mapCounts(raw) });
+          })
+          .catch(() => write({ type: 'counts', data: null, error: 'unavailable' })),
+        similar(domain)
+          .then((raw) => {
+            paidCalls++;
+            write({ type: 'competitors', data: mapCompetitors(raw) });
+          })
+          .catch(() => write({ type: 'competitors', data: null, error: 'unavailable' })),
+        locationDist(domain)
+          .then((raw) => {
+            paidCalls++;
+            write({ type: 'locations', data: mapLocations(raw) });
+          })
+          .catch(() => write({ type: 'locations', data: null, error: 'unavailable' })),
+        domainSearch(domain, EMPLOYEE_LIMIT)
+          .then((raw) => {
+            paidCalls++;
+            const mapped = mapEmployees(raw);
+            orgExtras = mapOrgExtras(raw);
+            write({ type: 'employees', data: mapped.employees, totalAvailable: mapped.totalAvailable });
+            if (companyEmitted && orgExtras) emitCompany();
+          })
+          .catch(() => write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' })),
+      ];
 
       await Promise.allSettled(jobs);
-
-      // ---- Persist fresh bundles + spend, then close ----
-      try {
-        if (companyMiss && companyBase) {
-          const bundle: CompanyBundle = {
-            company: companyBase,
-            counts: newCounts,
-            competitors: newCompetitors,
-            locations: newLocations,
-            cachedAt: Date.now(),
-          };
-          await saveCompanyBundle(domain, bundle);
-        }
-        if (employeeMiss) {
-          const bundle: EmployeeBundle = {
-            employees: newEmployees,
-            totalAvailable: newTotal,
-            org: orgExtras,
-            cachedAt: Date.now(),
-          };
-          await saveEmployeeBundle(domain, bundle);
-        }
-      } catch {
-        /* caching is best-effort */
-      } finally {
-        if (holdsLock) await releaseFetchLock(domain);
-      }
 
       const cost = Math.round(paidCalls * 0.01 * 100) / 100;
       if (paidCalls > 0) await recordSpend(paidCalls);
@@ -317,8 +182,6 @@ export async function POST(req: NextRequest) {
         ts: Date.now(),
         ipHash: idHash,
         domain,
-        cacheCompany: cachedCompany,
-        cacheEmployees: cachedEmployees,
         durationMs,
         cost,
         success: true,

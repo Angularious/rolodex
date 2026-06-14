@@ -12,8 +12,6 @@ export async function POST(req: NextRequest) {
     ts: Date.now(),
     ipHash: idHash,
     domain: '__conversion__',
-    cacheCompany: false,
-    cacheEmployees: false,
     durationMs: 0,
     cost: 0,
     success: true,

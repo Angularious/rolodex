@@ -70,7 +70,7 @@ export interface Employee {
 
 // NDJSON stream message types emitted by /api/search
 export type StreamMessage =
-  | { type: 'meta'; domain: string; cached: { company: boolean; employees: boolean }; resolvedFrom?: string | null }
+  | { type: 'meta'; domain: string; resolvedFrom?: string | null }
   | { type: 'company'; data: Company | null; error?: string }
   | { type: 'counts'; data: Counts | null; error?: string }
   | { type: 'competitors'; data: Competitor[] | null; error?: string }

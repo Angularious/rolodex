@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 interface AdminData {
   persistent: boolean;
   spend: { spent: number; cap: number; ratio: number; overCap: boolean; warn: boolean };
-  totals: { searches: number; cacheHitRate: number; errorRate: number; conversions: number };
+  totals: { searches: number; errorRate: number; conversions: number };
   searchesByDay: { day: string; count: number }[];
   topDomains: { domain: string; count: number }[];
   recent: {
@@ -13,8 +13,6 @@ interface AdminData {
     domain: string;
     cost: number;
     durationMs: number;
-    cacheCompany: boolean;
-    cacheEmployees: boolean;
     success: boolean;
   }[];
 }
@@ -90,9 +88,8 @@ export default function AdminPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Stat label="Searches (recent)" value={String(data.totals.searches)} />
-              <Stat label="Cache hit rate" value={`${data.totals.cacheHitRate}%`} />
               <Stat label="Error rate" value={`${data.totals.errorRate}%`} />
               <Stat label="Conversions" value={String(data.totals.conversions)} />
             </div>
@@ -148,7 +145,6 @@ export default function AdminPage() {
                   <tr>
                     <th>Time</th>
                     <th>Domain</th>
-                    <th>Cache</th>
                     <th>Cost</th>
                     <th>Duration</th>
                     <th>OK</th>
@@ -159,7 +155,6 @@ export default function AdminPage() {
                     <tr key={i}>
                       <td>{new Date(e.ts).toLocaleString()}</td>
                       <td>{e.domain}</td>
-                      <td>{e.cacheCompany || e.cacheEmployees ? 'hit' : 'miss'}</td>
                       <td>${e.cost.toFixed(2)}</td>
                       <td>{(e.durationMs / 1000).toFixed(1)}s</td>
                       <td>{e.success ? '✓' : '✗'}</td>

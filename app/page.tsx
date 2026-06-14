@@ -30,7 +30,6 @@ interface Report {
   domain: string;
   inputEcho: string;
   resolvedFrom: string | null;
-  cached: { company: boolean; employees: boolean };
   company: Company | null;
   companyError: boolean;
   counts: Counts | null;
@@ -51,7 +50,6 @@ function freshReport(inputEcho: string): Report {
     domain: inputEcho,
     inputEcho,
     resolvedFrom: null,
-    cached: { company: false, employees: false },
     company: null,
     companyError: false,
     counts: null,
@@ -77,34 +75,30 @@ export default function Home() {
   const [error, setError] = useState<SearchError | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('employees');
   const [forcedDept, setForcedDept] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [done, setDone] = useState(false);
 
   // Turnstile: fetch a fresh single-use token per search by remounting.
   const [widgetKey, setWidgetKey] = useState(0);
-  const pending = useRef<{ value: string; refresh: boolean } | null>(null);
+  const pending = useRef<{ value: string } | null>(null);
   const inFlight = useRef(false);
 
   const doSearch = useCallback(
-    async (value: string, refresh: boolean, token: string | undefined) => {
+    async (value: string, token: string | undefined) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setError(null);
       setDone(false);
       setForcedDept(null);
-      if (refresh) setRefreshing(true);
-      else {
-        setStatus('searching');
-        setActiveTab('employees');
-        setReport(freshReport(value));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      setStatus('searching');
+      setActiveTab('employees');
+      setReport(freshReport(value));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
 
       try {
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ input: value, turnstileToken: token, refresh }),
+          body: JSON.stringify({ input: value, turnstileToken: token }),
         });
 
         if (!res.ok) {
@@ -119,7 +113,7 @@ export default function Home() {
             const r = prev ?? freshReport(value);
             switch (msg.type) {
               case 'meta':
-                return { ...r, domain: msg.domain, resolvedFrom: msg.resolvedFrom ?? null, cached: msg.cached };
+                return { ...r, domain: msg.domain, resolvedFrom: msg.resolvedFrom ?? null };
               case 'company':
                 return { ...r, company: msg.data, companyError: !msg.data && !!msg.error };
               case 'counts':
@@ -152,33 +146,30 @@ export default function Home() {
         setStatus('error');
       } finally {
         inFlight.current = false;
-        setRefreshing(false);
       }
     },
     [],
   );
 
-  // Entry point for every search (typed, competitor click, refresh).
+  // Entry point for every search (typed input or competitor click).
   const requestSearch = useCallback(
-    (value: string, refresh = false) => {
+    (value: string) => {
       const v = value.trim();
       if (!v || inFlight.current) return;
 
       // Client-side pre-check mirrors the server to avoid burning a token.
-      if (!refresh) {
-        const norm = normalizeInput(v);
-        if (norm.kind === 'invalid') {
-          setError({ error: 'invalid_domain', message: norm.reason });
-          setStatus('error');
-          return;
-        }
+      const norm = normalizeInput(v);
+      if (norm.kind === 'invalid') {
+        setError({ error: 'invalid_domain', message: norm.reason });
+        setStatus('error');
+        return;
       }
 
       if (SITE_KEY) {
-        pending.current = { value: v, refresh };
+        pending.current = { value: v };
         setWidgetKey((k) => k + 1); // remount → onVerify fires with a fresh token
       } else {
-        doSearch(v, refresh, undefined);
+        doSearch(v, undefined);
       }
     },
     [doSearch],
@@ -189,7 +180,7 @@ export default function Home() {
       const p = pending.current;
       if (p) {
         pending.current = null;
-        doSearch(p.value, p.refresh, token);
+        doSearch(p.value, token);
       }
     },
     [doSearch],
@@ -300,18 +291,12 @@ export default function Home() {
               )}
               {done && (
                 <div className="text-white/80 text-xs mb-2">
-                  {report.cached.company || report.cached.employees
-                    ? '⚡ Served from cache'
-                    : `Fresh report · $${report.cost.toFixed(2)} · ${(report.durationMs / 1000).toFixed(1)}s`}
+                  Live report · ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
                 </div>
               )}
 
               {report.company ? (
-                <CompanyCard
-                  company={report.company}
-                  refreshing={refreshing}
-                  onRefresh={() => requestSearch(report.domain, true)}
-                />
+                <CompanyCard company={report.company} />
               ) : report.companyError ? (
                 <div className="retro-panel-flat p-6 my-4 text-center text-slate">
                   Company profile unavailable for <b>{report.domain}</b>.

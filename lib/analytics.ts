@@ -6,8 +6,6 @@ export interface SearchEvent {
   ts: number;
   ipHash: string;
   domain: string;
-  cacheCompany: boolean;
-  cacheEmployees: boolean;
   durationMs: number;
   cost: number;
   success: boolean;
@@ -30,7 +28,6 @@ export async function logSearch(ev: SearchEvent): Promise<void> {
   try {
     await store.pushCapped(EVENTS_KEY, ev, MAX_EVENTS);
     await store.incr(`stat:searches:${day}`, 60 * 60 * 24 * 30);
-    if (ev.cacheCompany || ev.cacheEmployees) await store.incr(`stat:cachehit:${day}`, 60 * 60 * 24 * 30);
     if (!ev.success) await store.incr(`stat:error:${day}`, 60 * 60 * 24 * 30);
     await store.incr(`stat:domain:${ev.domain}`, 60 * 60 * 24 * 30);
   } catch {

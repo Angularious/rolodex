@@ -36,14 +36,12 @@ export async function GET(req: NextRequest) {
 
   const byDay = new Map<string, number>();
   const byDomain = new Map<string, number>();
-  let cacheHits = 0;
   let errors = 0;
   let conversions = 0;
 
   for (const e of events) {
     byDay.set(dayOf(e.ts), (byDay.get(dayOf(e.ts)) ?? 0) + 1);
     byDomain.set(e.domain, (byDomain.get(e.domain) ?? 0) + 1);
-    if (e.cacheCompany || e.cacheEmployees) cacheHits++;
     if (!e.success) errors++;
     // conversion events are logged as a pseudo-domain marker
     if (e.domain === '__conversion__') conversions++;
@@ -58,7 +56,6 @@ export async function GET(req: NextRequest) {
       spend,
       totals: {
         searches: total,
-        cacheHitRate: total ? Math.round((cacheHits / total) * 100) : 0,
         errorRate: total ? Math.round((errors / total) * 100) : 0,
         conversions,
       },

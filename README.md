@@ -12,8 +12,13 @@ production-grade abuse protection.
 - Next.js 14 (App Router) — deploy on Vercel
 - Tailwind + custom retro CSS
 - Route Handlers proxy Orthogonal server-side (the key never reaches the browser)
-- Upstash Redis for cache + rate limit + spend counter (in-memory fallback in dev)
+- Upstash Redis for rate-limit counters + the global spend counter (in-memory fallback in dev)
 - Cloudflare Turnstile for bot protection (skipped in dev when unconfigured)
+
+> **No data caching.** Per Orthogonal's data policy, responses are never
+> persisted — every search fires fresh Tomba calls. Redis is used only for
+> rate-limit and spend counters (our own usage metadata), never for returned
+> company/people data.
 
 ## Quick start
 
@@ -43,26 +48,23 @@ for production behavior.
 
 `POST /api/search` (NDJSON stream) runs, in order: Turnstile → per-IP rate limit
 (3/min, 10/hr, 30/day) → global spend kill switch → input normalize / name→domain
-resolution → cache check → in-flight dedup lock → fires up to 5 Tomba calls in
-parallel, emitting each section as it resolves → caches results → records spend
-→ logs an analytics event.
+resolution → fires up to 5 Tomba calls in parallel, emitting each section as it
+resolves → records spend → logs an analytics event.
 
-Two cache tiers: company firmographics (7-day TTL) and employee emails (24-hour
-TTL), stored separately so a manual refresh re-pulls only employees. A cold
-search costs **$0.05** (5 calls), a cached search **$0**, optional name
-resolution **+$0.01**.
+Every search is a live fetch (no cache): it costs **$0.05** (5 calls), plus
+**$0.01** if a company name had to be resolved to a domain. At the default
+$20/day cap that's ~400 searches/day.
 
 ### Cost & abuse controls
-- Per-IP rate limit; competitor clicks and refreshes count against it
+- Per-IP rate limit; competitor clicks count against it
 - Global daily spend cap (`DAILY_SPEND_CAP_USD`) — returns "demo at capacity" at 100%
-- Manual refresh throttled to 1 per domain per IP per 24h
-- In-flight dedup so double-clicks don't double-spend
+- The submit button is disabled mid-search so a double-click can't double-fire
 - CORS lock + `robots.txt` disallow-all + no query in URL
 
 ### Notes
 - No company blocklist — any real company is searchable. Free-email providers,
   localhost, and IPs are rejected as input (they can't yield a company report).
 - The in-memory fallback is single-instance only; set Upstash for real
-  cross-instance state on Vercel.
-- `/admin?key=<ADMIN_PASSWORD>` shows searches/day, top domains, cache hit rate,
-  daily spend, error rate, and Orthogonal click-throughs.
+  cross-instance rate-limit/spend state on Vercel.
+- `/admin?key=<ADMIN_PASSWORD>` shows searches/day, top domains, daily spend,
+  error rate, and Orthogonal click-throughs.
