@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import Turnstile from 'react-turnstile';
+import Turnstile, { type BoundTurnstileObject } from 'react-turnstile';
 import { readSearchStream } from '@/lib/stream';
 import { normalizeInput } from '@/lib/normalize';
 import type {
@@ -77,8 +77,12 @@ export default function Home() {
   const [forcedDept, setForcedDept] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Turnstile: fetch a fresh single-use token per search by remounting.
-  const [widgetKey, setWidgetKey] = useState(0);
+  // Turnstile: keep one fresh single-use token ready; after each search we
+  // call reset() on the bound widget to mint the next one. Remounting per
+  // search caused Cloudflare to return duplicate tokens (rejected as
+  // timeout-or-duplicate), which broke every search after the first.
+  const turnstile = useRef<BoundTurnstileObject | null>(null);
+  const tokenRef = useRef<string | null>(null);
   const pending = useRef<{ value: string } | null>(null);
   const inFlight = useRef(false);
 
@@ -165,22 +169,36 @@ export default function Home() {
         return;
       }
 
-      if (SITE_KEY) {
-        pending.current = { value: v };
-        setWidgetKey((k) => k + 1); // remount → onVerify fires with a fresh token
-      } else {
+      if (!SITE_KEY) {
         doSearch(v, undefined);
+        return;
+      }
+
+      const token = tokenRef.current;
+      if (token) {
+        // Consume the ready token, then mint a fresh one for the next search.
+        tokenRef.current = null;
+        doSearch(v, token);
+        turnstile.current?.reset();
+      } else {
+        // No token yet — queue; onVerify will run it once the widget solves.
+        pending.current = { value: v };
+        turnstile.current?.reset();
       }
     },
     [doSearch],
   );
 
   const onTurnstileVerify = useCallback(
-    (token: string) => {
+    (token: string, bound: BoundTurnstileObject) => {
+      turnstile.current = bound;
       const p = pending.current;
       if (p) {
         pending.current = null;
         doSearch(p.value, token);
+        bound.reset(); // mint the next token in the background
+      } else {
+        tokenRef.current = token; // keep ready for the next search
       }
     },
     [doSearch],
@@ -220,7 +238,7 @@ export default function Home() {
               onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
               className="font-display text-sm sm:text-base bg-ink text-neon px-3 py-1.5 rounded border-2 border-ink hover:bg-cobalt-deep transition-colors"
             >
-              POWERED BY ORTHOGONAL ↗
+              ORTHOGONAL.COM ↗
             </a>
           </div>
         </header>
@@ -235,7 +253,7 @@ export default function Home() {
                 </h1>
                 <p className="text-white/90 max-w-xl mx-auto mb-8">
                   Type a company domain or name. Get an instant intelligence report — profile,
-                  departments, locations, competitors, and people. Powered by orthogonal.com.
+                  departments, locations, competitors, and people.
                 </p>
               </>
             )}
@@ -273,7 +291,22 @@ export default function Home() {
 
             {SITE_KEY && (
               <div className="mt-3 flex justify-center">
-                <Turnstile key={widgetKey} sitekey={SITE_KEY} onVerify={onTurnstileVerify} theme="light" />
+                <Turnstile
+                  sitekey={SITE_KEY}
+                  onVerify={onTurnstileVerify}
+                  onLoad={(_widgetId, bound) => {
+                    turnstile.current = bound;
+                  }}
+                  onError={() => {
+                    tokenRef.current = null;
+                  }}
+                  onExpire={() => {
+                    tokenRef.current = null;
+                    turnstile.current?.reset();
+                  }}
+                  refreshExpired="auto"
+                  theme="light"
+                />
               </div>
             )}
           </section>

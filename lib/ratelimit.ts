@@ -10,9 +10,11 @@ export interface RateLimitResult {
   retryAfterSec?: number;
 }
 
-const PER_MIN = 3;
-const PER_HOUR = 10;
-const PER_DAY = 30;
+// Generous enough to explore (search + click through several competitors)
+// without hitting a wall. The global daily spend cap is the real money guard.
+const PER_MIN = 12;
+const PER_HOUR = 60;
+const PER_DAY = 120;
 
 export async function checkRateLimit(idHash: string): Promise<RateLimitResult> {
   const sb = getSupabase();
