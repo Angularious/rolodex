@@ -1,0 +1,313 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cobalt: #1d4ed8;
+  --cobalt-deep: #0b2e8a;
+  --signal: #e11d2a;
+  --neon: #ffd400;
+  --slate: #334155;
+  --ink: #0b1220;
+  --panel: #ffffff;
+  --paper: #eef2ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  font-family: Arial, Verdana, Helvetica, sans-serif;
+  color: var(--ink);
+  background-color: var(--cobalt);
+  /* tiled retro background: diagonal hazard + dotted grid */
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px),
+    repeating-linear-gradient(
+      45deg,
+      rgba(11, 46, 138, 0.55) 0px,
+      rgba(11, 46, 138, 0.55) 22px,
+      rgba(29, 78, 216, 0.55) 22px,
+      rgba(29, 78, 216, 0.55) 44px
+    );
+  background-size: 22px 22px, auto;
+  min-height: 100vh;
+}
+
+.font-display {
+  font-family: 'Anton', Impact, 'Haettenschweiler', 'Arial Narrow Bold', sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------- panels */
+.retro-panel {
+  background: var(--panel);
+  border: 4px solid var(--ink);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  border-radius: 4px;
+}
+
+.retro-panel-flat {
+  background: var(--panel);
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+}
+
+.panel-accent {
+  border-top: 8px solid var(--signal);
+}
+
+/* ---------------------------------------------------------------- buttons */
+.retro-btn {
+  font-family: 'Anton', Impact, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  padding: 0.6rem 1.3rem;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 0 var(--ink);
+  position: relative;
+  background: var(--neon);
+  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 55%);
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+  user-select: none;
+}
+.retro-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--ink);
+}
+.retro-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 0 var(--ink);
+}
+.retro-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 4px 4px 0 0 var(--ink);
+}
+.retro-btn-blue {
+  background: var(--cobalt);
+  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
+  color: #fff;
+}
+.retro-btn-red {
+  background: var(--signal);
+  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
+  color: #fff;
+}
+.retro-btn-sm {
+  padding: 0.35rem 0.8rem;
+  box-shadow: 3px 3px 0 0 var(--ink);
+  font-size: 0.8rem;
+}
+
+/* ---------------------------------------------------------------- tabs */
+.retro-tab {
+  font-family: 'Anton', Impact, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #dbe4ff;
+  border: 3px solid var(--ink);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+  margin-right: 6px;
+  position: relative;
+  top: 3px;
+  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.15) inset;
+  transition: transform 0.06s ease, top 0.06s ease;
+  white-space: nowrap;
+}
+.retro-tab:hover {
+  transform: translateY(-3px);
+}
+.retro-tab[data-active='true'] {
+  background: var(--neon);
+  top: 0;
+  box-shadow: 0 -4px 0 var(--signal) inset;
+}
+
+/* ---------------------------------------------------------------- badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: bold;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  /* pixel-ish border */
+  box-shadow: 2px 2px 0 0 rgba(11, 18, 32, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.badge-green {
+  background: #16a34a;
+  color: #fff;
+}
+.badge-yellow {
+  background: var(--neon);
+  color: var(--ink);
+}
+.badge-red {
+  background: var(--signal);
+  color: #fff;
+}
+.badge-slate {
+  background: var(--slate);
+  color: #fff;
+}
+.badge-tag {
+  background: #dbe4ff;
+  color: var(--ink);
+  box-shadow: 1px 1px 0 0 rgba(11, 18, 32, 0.6);
+  text-transform: none;
+}
+
+/* ---------------------------------------------------------------- table */
+.retro-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+.retro-table thead th {
+  background: var(--cobalt);
+  color: #fff;
+  font-family: 'Anton', Impact, sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.retro-table tbody td {
+  padding: 7px 10px;
+  border: 2px solid rgba(11, 18, 32, 0.18);
+  border-left: none;
+  border-right: none;
+}
+.retro-table tbody tr:nth-child(even) {
+  background: #eef2ff;
+}
+.retro-table tbody tr {
+  cursor: pointer;
+}
+.retro-table tbody tr:hover {
+  background: #fff7c2;
+}
+
+/* ---------------------------------------------------------------- loading bars */
+.loader-bar {
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--neon) 0px,
+    var(--neon) 10px,
+    var(--cobalt) 10px,
+    var(--cobalt) 20px
+  );
+  background-size: 200% 100%;
+  animation: slide 0.7s linear infinite;
+}
+@keyframes slide {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 40px 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 3px;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------------------------------------------------------------- entrance */
+.pop-in {
+  animation: pop 0.28s cubic-bezier(0.2, 1.3, 0.5, 1) both;
+}
+@keyframes pop {
+  from {
+    transform: scale(0.96) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------- toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--ink);
+  color: var(--neon);
+  font-family: 'Anton', Impact, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.7rem 1.4rem;
+  border: 3px solid var(--neon);
+  border-radius: 6px;
+  box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------------------------------------------------------- inputs */
+.retro-input {
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  width: 100%;
+  box-shadow: inset 3px 3px 0 0 rgba(11, 18, 32, 0.12);
+  background: #fff;
+}
+.retro-input:focus {
+  outline: none;
+  box-shadow: inset 3px 3px 0 0 rgba(29, 78, 216, 0.25), 0 0 0 3px var(--neon);
+}
+.retro-select,
+.retro-range {
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  background: #fff;
+  font-size: 0.85rem;
+}
+
+/* scrollbars for the employee table on desktop */
+.scroll-y {
+  max-height: 560px;
+  overflow: auto;
+}
