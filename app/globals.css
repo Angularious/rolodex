@@ -2,15 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================ design tokens
+   Recreated from tryclean.ai: near-black canvas, warm cream ink, electric
+   blue accent, editorial serif headlines, mono HUD labels. */
 :root {
-  --cobalt: #1d4ed8;
-  --cobalt-deep: #0b2e8a;
-  --signal: #e11d2a;
-  --neon: #ffd400;
-  --slate: #334155;
-  --ink: #0b1220;
-  --panel: #ffffff;
-  --paper: #eef2ff;
+  --bg: #0a0a0b;
+  --bg-2: #0d0f14;
+  --ink: #f2efe8; /* primary text */
+  --ink-dim: rgba(242, 239, 232, 0.62);
+  --muted: #9a988f;
+  --line: rgba(242, 239, 232, 0.12);
+  --line-strong: rgba(242, 239, 232, 0.22);
+  --card: rgba(255, 255, 255, 0.035);
+  --card-hover: rgba(255, 255, 255, 0.06);
+
+  /* --- accent (violet) --- */
+  --accent: #8b3cff;
+  --accent-soft: #b48cff;
+  --accent-faint: #ece0ff;
+  --accent-ring: rgba(139, 60, 255, 0.28);
+  --accent-sel: rgba(139, 60, 255, 0.32);
+}
+
+/* Drop shadow that keeps text readable over the bright crest of the field. */
+.text-legible {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 22px rgba(0, 0, 0, 0.7);
 }
 
 * {
@@ -24,222 +40,250 @@ body {
 }
 
 body {
-  font-family: Arial, Verdana, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   color: var(--ink);
-  background-color: var(--cobalt);
-  /* tiled retro background: diagonal hazard + dotted grid */
-  background-image:
-    radial-gradient(rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px),
-    repeating-linear-gradient(
-      45deg,
-      rgba(11, 46, 138, 0.55) 0px,
-      rgba(11, 46, 138, 0.55) 22px,
-      rgba(29, 78, 216, 0.55) 22px,
-      rgba(29, 78, 216, 0.55) 44px
-    );
-  background-size: 22px 22px, auto;
+  background-color: var(--bg);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+::selection {
+  background: var(--accent-sel);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------- typography */
 .font-display {
-  font-family: 'Anton', Impact, 'Haettenschweiler', 'Arial Narrow Bold', sans-serif;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-/* ---------------------------------------------------------------- panels */
+/* Big editorial serif headline (hero / statements). Italic accent words use
+   .em-accent or a plain <em>. */
+.font-serif-hero {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.022em;
+  line-height: 1.04;
+}
+.font-serif-hero em,
+.em-accent {
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
+/* Mono HUD / kicker labels: "01 / 03", "SCROLL", section tags */
+.hud {
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* ----------------------------------------------------------------- panels */
 .retro-panel {
-  background: var(--panel);
-  border: 4px solid var(--ink);
-  box-shadow: 6px 6px 0 0 var(--ink);
-  border-radius: 4px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
 }
 
 .retro-panel-flat {
-  background: var(--panel);
-  border: 3px solid var(--ink);
-  border-radius: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
 .panel-accent {
-  border-top: 8px solid var(--signal);
+  border-top: 1px solid var(--accent);
 }
 
 /* ---------------------------------------------------------------- buttons */
 .retro-btn {
-  font-family: 'Anton', Impact, sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  border: 3px solid var(--ink);
-  border-radius: 6px;
-  padding: 0.6rem 1.3rem;
+  font-family: var(--font-sans), sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--bg);
+  background: var(--ink);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.62rem 1.25rem;
   cursor: pointer;
-  box-shadow: 4px 4px 0 0 var(--ink);
-  position: relative;
-  background: var(--neon);
-  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 55%);
-  transition: transform 0.05s ease, box-shadow 0.05s ease;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.18s ease,
+    opacity 0.18s ease;
   user-select: none;
 }
 .retro-btn:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 5px 5px 0 0 var(--ink);
+  transform: translateY(-1px);
+  background: #fff;
 }
 .retro-btn:active {
-  transform: translate(4px, 4px);
-  box-shadow: 0 0 0 0 var(--ink);
+  transform: translateY(0);
 }
 .retro-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
   transform: none;
-  box-shadow: 4px 4px 0 0 var(--ink);
 }
+/* Primary accent variant */
 .retro-btn-blue {
-  background: var(--cobalt);
-  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
+  background: var(--accent);
   color: #fff;
 }
-.retro-btn-red {
-  background: var(--signal);
-  background-image: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
-  color: #fff;
+.retro-btn-blue:hover {
+  background: var(--accent-soft);
+}
+/* Ghost / outline variant */
+.retro-btn-red,
+.retro-btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+}
+.retro-btn-red:hover,
+.retro-btn-ghost:hover {
+  background: var(--card-hover);
+  border-color: var(--ink-dim);
 }
 .retro-btn-sm {
-  padding: 0.35rem 0.8rem;
-  box-shadow: 3px 3px 0 0 var(--ink);
-  font-size: 0.8rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  border-radius: 8px;
 }
 
-/* ---------------------------------------------------------------- tabs */
+/* ------------------------------------------------------------------- tabs */
 .retro-tab {
-  font-family: 'Anton', Impact, sans-serif;
+  font-family: var(--font-mono), monospace;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: #dbe4ff;
-  border: 3px solid var(--ink);
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  padding: 0.55rem 1.1rem;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.6rem 0.9rem;
   cursor: pointer;
-  margin-right: 6px;
-  position: relative;
-  top: 3px;
-  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.15) inset;
-  transition: transform 0.06s ease, top 0.06s ease;
+  margin-right: 4px;
+  transition: color 0.18s ease, border-color 0.18s ease;
   white-space: nowrap;
 }
 .retro-tab:hover {
-  transform: translateY(-3px);
+  color: var(--ink);
 }
 .retro-tab[data-active='true'] {
-  background: var(--neon);
-  top: 0;
-  box-shadow: 0 -4px 0 var(--signal) inset;
+  color: var(--ink);
+  border-bottom-color: var(--accent);
 }
 
-/* ---------------------------------------------------------------- badges */
+/* ----------------------------------------------------------------- badges */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-weight: bold;
-  font-size: 0.72rem;
-  padding: 2px 7px;
-  border: 2px solid var(--ink);
-  border-radius: 3px;
-  /* pixel-ish border */
-  box-shadow: 2px 2px 0 0 rgba(11, 18, 32, 0.85);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: var(--card);
 }
 .badge-green {
-  background: #16a34a;
-  color: #fff;
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #6ee7b7;
 }
 .badge-yellow {
-  background: var(--neon);
-  color: var(--ink);
+  background: rgba(60, 109, 255, 0.14);
+  border-color: rgba(60, 109, 255, 0.45);
+  color: var(--accent-soft);
 }
 .badge-red {
-  background: var(--signal);
-  color: #fff;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
 }
 .badge-slate {
-  background: var(--slate);
-  color: #fff;
+  background: var(--card);
+  border-color: var(--line-strong);
+  color: var(--muted);
 }
 .badge-tag {
-  background: #dbe4ff;
-  color: var(--ink);
-  box-shadow: 1px 1px 0 0 rgba(11, 18, 32, 0.6);
+  background: rgba(60, 109, 255, 0.1);
+  border-color: rgba(60, 109, 255, 0.3);
+  color: var(--accent-soft);
   text-transform: none;
+  letter-spacing: 0;
 }
 
-/* ---------------------------------------------------------------- table */
+/* ------------------------------------------------------------------ table */
 .retro-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: 0.88rem;
 }
 .retro-table thead th {
-  background: var(--cobalt);
-  color: #fff;
-  font-family: 'Anton', Impact, sans-serif;
-  letter-spacing: 0.03em;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-size: 0.72rem;
   text-align: left;
-  padding: 8px 10px;
-  border: 2px solid var(--ink);
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
   position: sticky;
   top: 0;
   z-index: 1;
+  backdrop-filter: blur(8px);
+  background: rgba(13, 15, 20, 0.85);
 }
 .retro-table tbody td {
-  padding: 7px 10px;
-  border: 2px solid rgba(11, 18, 32, 0.18);
-  border-left: none;
-  border-right: none;
-}
-.retro-table tbody tr:nth-child(even) {
-  background: #eef2ff;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
 }
 .retro-table tbody tr {
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 .retro-table tbody tr:hover {
-  background: #fff7c2;
+  background: var(--card-hover);
 }
 
-/* ---------------------------------------------------------------- loading bars */
+/* ------------------------------------------------------------ loading bars */
 .loader-bar {
-  height: 14px;
-  border: 2px solid var(--ink);
-  border-radius: 3px;
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--neon) 0px,
-    var(--neon) 10px,
-    var(--cobalt) 10px,
-    var(--cobalt) 20px
+  height: 8px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(60, 109, 255, 0.15) 25%,
+    rgba(122, 168, 255, 0.45) 50%,
+    rgba(60, 109, 255, 0.15) 75%
   );
   background-size: 200% 100%;
-  animation: slide 0.7s linear infinite;
-}
-@keyframes slide {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 40px 0;
-  }
+  animation: shimmer 1.3s infinite;
 }
 .skeleton {
-  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.2s infinite;
-  border-radius: 3px;
+  animation: shimmer 1.3s infinite;
+  border-radius: 8px;
 }
 @keyframes shimmer {
   from {
@@ -250,64 +294,88 @@ body {
   }
 }
 
-/* ---------------------------------------------------------------- entrance */
-.pop-in {
-  animation: pop 0.28s cubic-bezier(0.2, 1.3, 0.5, 1) both;
+/* -------------------------------------------------------------- entrances */
+/* tryclean's signature reveal: fade + 12px rise on a soft ease. */
+.rise {
+  animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-@keyframes pop {
-  from {
-    transform: scale(0.96) translateY(8px);
+@keyframes rise {
+  0% {
     opacity: 0;
+    transform: translateY(12px);
   }
-  to {
-    transform: scale(1) translateY(0);
+  100% {
     opacity: 1;
+    transform: translateY(0);
+  }
+}
+.pop-in {
+  animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .pop-in {
+    animation: none;
   }
 }
 
-/* ---------------------------------------------------------------- toast */
+/* ------------------------------------------------------------------ toast */
 .toast {
   position: fixed;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
-  background: var(--ink);
-  color: var(--neon);
-  font-family: 'Anton', Impact, sans-serif;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.7rem 1.4rem;
-  border: 3px solid var(--neon);
-  border-radius: 6px;
-  box-shadow: 4px 4px 0 0 rgba(0, 0, 0, 0.5);
+  font-size: 0.82rem;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
-/* ---------------------------------------------------------------- inputs */
+/* ----------------------------------------------------------------- inputs */
 .retro-input {
-  border: 3px solid var(--ink);
-  border-radius: 6px;
-  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
   font-size: 1rem;
+  font-family: var(--font-sans), sans-serif;
   width: 100%;
-  box-shadow: inset 3px 3px 0 0 rgba(11, 18, 32, 0.12);
-  background: #fff;
+  background: var(--card);
+  color: var(--ink);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.retro-input::placeholder {
+  color: var(--muted);
 }
 .retro-input:focus {
   outline: none;
-  box-shadow: inset 3px 3px 0 0 rgba(29, 78, 216, 0.25), 0 0 0 3px var(--neon);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 .retro-select,
 .retro-range {
-  border: 2px solid var(--ink);
-  border-radius: 4px;
-  padding: 0.3rem 0.4rem;
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg-2);
+  color: var(--ink);
   font-size: 0.85rem;
 }
 
-/* scrollbars for the employee table on desktop */
+/* ---------------------------------------------------------------- scroll */
 .scroll-y {
   max-height: 560px;
   overflow: auto;
+}
+.scroll-y::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-y::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
 }

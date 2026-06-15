@@ -18,7 +18,7 @@ export default function Tabs({
   onChange: (id: TabId) => void;
 }) {
   return (
-    <div className="flex flex-wrap border-b-4 border-ink mt-2">
+    <div className="flex flex-wrap border-b border-line mt-2">
       {tabs.map((t) => (
         <button
           key={t.id}

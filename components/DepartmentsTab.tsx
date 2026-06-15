@@ -5,8 +5,8 @@ import type { Counts } from '@/lib/types';
 function Bar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="h-2 mt-1 border border-ink/40 rounded-sm overflow-hidden bg-white">
-      <div className="h-full bg-cobalt" style={{ width: `${pct}%` }} />
+    <div className="h-1.5 mt-1.5 rounded-full overflow-hidden bg-card border border-line">
+      <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -36,7 +36,7 @@ export default function DepartmentsTab({
           <button
             key={d.name}
             onClick={() => onPickDepartment(d.name)}
-            className="retro-panel-flat p-3 text-left hover:bg-neon transition-colors"
+            className="retro-panel-flat p-3 text-left hover:bg-card-hover hover:border-accent transition-colors"
             title={`Filter employees by ${d.name}`}
           >
             <div className="flex justify-between items-baseline">
@@ -71,7 +71,7 @@ export default function DepartmentsTab({
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="retro-panel-flat p-3 text-center">
-      <div className="font-display text-3xl text-cobalt">{value}</div>
+      <div className="font-display text-3xl text-accent-soft">{value}</div>
       <div className="text-[0.7rem] uppercase tracking-wide text-slate font-bold">{label}</div>
     </div>
   );

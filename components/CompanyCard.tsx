@@ -70,7 +70,7 @@ export default function CompanyCard({ company }: { company: Company }) {
             href={company.website}
             target="_blank"
             rel="noreferrer"
-            className="text-cobalt font-bold underline break-all"
+            className="text-accent-soft font-medium hover:text-accent underline break-all"
           >
             {company.domain}
           </a>
@@ -100,7 +100,7 @@ export default function CompanyCard({ company }: { company: Company }) {
                   target="_blank"
                   rel="noreferrer"
                   title={s.label}
-                  className="w-8 h-8 grid place-items-center border-2 border-ink rounded bg-white shadow-[2px_2px_0_0_#0b1220] hover:bg-neon transition-colors font-display"
+                  className="w-8 h-8 grid place-items-center border border-line rounded-lg bg-card hover:bg-card-hover hover:border-accent transition-colors text-cream"
                 >
                   {s.icon}
                 </a>
@@ -110,7 +110,7 @@ export default function CompanyCard({ company }: { company: Company }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-4 border-t-2 border-dashed border-ink/30">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-4 border-t border-line">
         <Stat label="Founded" value={company.founded} />
         <Stat label="Size" value={company.size} />
         <Stat label="Revenue" value={company.revenue} />
@@ -121,7 +121,7 @@ export default function CompanyCard({ company }: { company: Company }) {
           {company.emailPattern ? (
             <button
               onClick={copyPattern}
-              className="text-sm font-mono text-cobalt underline"
+              className="text-sm font-mono text-accent-soft hover:text-accent underline"
               title="Copy example email"
             >
               {company.emailPattern}
@@ -133,7 +133,7 @@ export default function CompanyCard({ company }: { company: Company }) {
       </div>
 
       {company.tech.length > 0 && (
-        <div className="mt-4 pt-3 border-t-2 border-dashed border-ink/30">
+        <div className="mt-4 pt-3 border-t border-line">
           <div className="text-[0.65rem] uppercase tracking-wide text-slate font-bold mb-1">
             Tech stack
           </div>

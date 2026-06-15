@@ -13,7 +13,8 @@ production-grade abuse protection.
 - Tailwind + custom retro CSS
 - Route Handlers proxy Orthogonal server-side (the key never reaches the browser)
 - Supabase (Postgres) for rate-limit counters + the global spend counter
-- Cloudflare Turnstile for bot protection (skipped in dev when unconfigured)
+- Origin lock + per-IP rate limiting + a global spend cap for abuse protection
+  (no CAPTCHA — purely server-side)
 
 > **No data caching.** Per Orthogonal's data policy, responses are never
 > persisted — every search fires fresh Tomba calls. Supabase holds only
@@ -29,8 +30,8 @@ npm run dev
 ```
 
 With only `ORTHOGONAL_API_KEY` set, the app runs fully: rate-limit/spend
-tracking is disabled (no Supabase) and Turnstile verification is skipped. Add
-the other env vars for production behavior.
+tracking is disabled (no Supabase). Add the other env vars for production
+behavior.
 
 For persistent rate limits + spend cap, create a Supabase project and run
 `supabase/schema.sql` once in its SQL editor, then set `SUPABASE_URL` +
@@ -42,7 +43,6 @@ For persistent rate limits + spend cap, create a Supabase project and run
 |---|---|---|
 | `ORTHOGONAL_API_KEY` | yes (for live data) | Server-side Orthogonal key |
 | `DAILY_SPEND_CAP_USD` | no (default 20) | Global daily kill switch, editable |
-| `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | prod | Bot protection |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | prod | Rate-limit + spend counters |
 | `ADMIN_PASSWORD` | for /admin | Protects the analytics dashboard |
 | `IP_HASH_SALT` | recommended | Salt for hashing visitor IPs |
@@ -50,10 +50,10 @@ For persistent rate limits + spend cap, create a Supabase project and run
 
 ## How it works
 
-`POST /api/search` (NDJSON stream) runs, in order: Turnstile → per-IP rate limit
-(3/min, 10/hr, 30/day) → global spend kill switch → input normalize / name→domain
-resolution → fires up to 5 Tomba calls in parallel, emitting each section as it
-resolves → records spend → logs an analytics event.
+`POST /api/search` (NDJSON stream) runs, in order: origin lock → per-IP rate
+limit (12/min, 60/hr, 120/day) → global spend kill switch → input normalize /
+name→domain resolution → fires up to 5 Tomba calls in parallel, emitting each
+section as it resolves → records spend → logs an analytics event.
 
 Every search is a live fetch (no cache): it costs **$0.05** (5 calls), plus
 **$0.01** if a company name had to be resolved to a domain. At the default

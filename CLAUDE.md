@@ -11,7 +11,7 @@ orthogonal.com" demo — not Orthogonal-owned branding.
 
 ## Stack
 Next.js 14 App Router · React 18 · Tailwind 3 + custom retro CSS · Supabase
-(Postgres) for counters · Cloudflare Turnstile (invisible) · deployed on Vercel.
+(Postgres) for counters · deployed on Vercel.
 
 ## Commands
 ```
@@ -24,7 +24,7 @@ the user's keys; it's already gitignore'd so it never gets committed.
 
 ## Architecture
 - **`/api/search`** is ONE gated NDJSON-streaming route. Order: origin check →
-  Turnstile → per-IP rate limit → global spend kill-switch → normalize /
+  per-IP rate limit → global spend kill-switch → normalize /
   name→domain resolve → fire **5 Tomba calls in parallel**, emit each section as
   it resolves (`meta`, `company`, `counts`, `competitors`, `locations`,
   `employees`, `done`) → record spend → log analytics. Per-section failures are
@@ -66,19 +66,20 @@ Cost: $0.05/cold search (5 calls), +$0.01 if a name needs resolving.
 - `lib/spend.ts` fails CLOSED on DB error (money guard); `lib/ratelimit.ts` fails
   OPEN (spend cap is the backstop).
 
-## Turnstile (bot protection)
-- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (public, fine to expose) + `TURNSTILE_SECRET_KEY`
-  (server-only). Skipped entirely in dev when the site key is unset.
-- **Invisible:** widget uses `appearance="interaction-only"` — only shows on a real
-  challenge. Don't CSS-hide it (breaks verification + violates CF terms).
-- **Token flow (don't break this):** keep ONE widget mounted; consume the ready
-  token, then call `boundTurnstile.reset()` to mint the next. Do NOT remount the
-  widget per search — rapid remounts make Cloudflare return duplicate tokens that
-  `siteverify` rejects (`timeout-or-duplicate` → 400 captcha_failed on every search
-  after the first). This was a real bug; the reset() pattern fixed it.
-- **Cloudflare hostnames:** the widget only loads on domains allowlisted in the CF
-  Turnstile dashboard. Add the exact Vercel/prod domain. Preview deploys (random
-  `*.vercel.app`) won't work — test on the production URL.
+## Abuse protection (no CAPTCHA)
+Cloudflare Turnstile was **removed** (2026-06-15) — no bot-challenge box. Three
+code-level defenses guard the one money-spending route (`/api/search`):
+1. **Origin lock** — `originAllowed()` rejects cross-origin POSTs (403). Allows
+   requests whose `Origin` matches the serving host, or the explicit
+   `ALLOWED_ORIGIN` env var. Stops other sites calling/embedding our API.
+2. **Per-IP rate limit** — Supabase-backed, 12/min · 60/hr · 120/day per hashed
+   IP. Competitor click-throughs count. Fails OPEN on DB error (`lib/ratelimit.ts`).
+3. **Global daily spend cap** — `DAILY_SPEND_CAP_USD` (default $20). Hard kill
+   switch, fails CLOSED on DB error (`lib/spend.ts`) — the real money backstop.
+
+Do NOT re-add Turnstile/CAPTCHA without asking — the user explicitly removed it
+(the box was annoying). If distributed bots become a problem, prefer Vercel
+WAF/Firewall (dashboard-configured, no visible challenge) over a CAPTCHA.
 
 ## Product decisions (from the user)
 - **No company blocklist** — any real company is searchable. Only free-email
@@ -94,6 +95,11 @@ Cost: $0.05/cold search (5 calls), +$0.01 if a name needs resolving.
 `pkill -f "PORT=xxxx"` only kills the npm wrapper, NOT the `next-server` child
 (PORT is an env var, not argv) → zombie server keeps serving stale builds. Kill by
 port instead: `lsof -ti:PORT | xargs kill -9`.
+
+**Never run `npm run build` while `next dev` is live** — both write `.next`, and the
+prod build wipes the dev server's chunks → `Error: Cannot find module './NNN.js'`.
+To recover: kill the dev server, `rm -rf .next`, restart dev (then hard-refresh the
+browser). To typecheck without touching dev, use `npx tsc --noEmit` instead.
 
 ## Conventions
 - Run `npm run build` before committing (catches type errors).

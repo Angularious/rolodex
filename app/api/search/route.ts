@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import { clientIp, hashIp } from '@/lib/hash';
-import { verifyTurnstile } from '@/lib/turnstile';
 import { checkRateLimit } from '@/lib/ratelimit';
 import { getSpendStatus, recordSpend } from '@/lib/spend';
 import { normalizeInput } from '@/lib/normalize';
@@ -25,8 +24,17 @@ import type { Company, StreamMessage, SearchError } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// A name-input search resolves the domain (≤9s) and then streams 5 parallel
+// Tomba calls (≤9s), so the worst case exceeds Vercel's default 10s function
+// limit. Raise the ceiling so the platform doesn't kill the request mid-stream.
+export const maxDuration = 30;
 
 const EMPLOYEE_LIMIT = 50;
+
+// Obvious non-browser / scripted clients. We don't block ALL non-browser UAs
+// (accessibility tools, etc.), just well-known automated signatures.
+const BOT_UA_RE =
+  /(curl|wget|python-requests|python-urllib|go-http-client|java\/|libwww|httpclient|scrapy|headlesschrome|phantomjs|bot|spider|crawler)/i;
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -35,10 +43,24 @@ function errorResponse(err: SearchError, status: number): Response {
   });
 }
 
-// CORS lock: only accept requests originating from our own deployment.
+// CORS lock: only accept requests that originate from our own deployment.
+// Browsers send `Origin` on POST (even same-origin); we fall back to the
+// `Referer` origin. A request with NEITHER is not coming from our UI — reject
+// it (this is what closes the "curl with no Origin header" bypass).
 function originAllowed(req: NextRequest): boolean {
-  const origin = req.headers.get('origin');
-  if (!origin) return true; // same-origin navigations / curl in dev
+  let origin = req.headers.get('origin');
+  if (!origin) {
+    const referer = req.headers.get('referer');
+    if (referer) {
+      try {
+        origin = new URL(referer).origin;
+      } catch {
+        /* malformed referer — treated as missing below */
+      }
+    }
+  }
+  if (!origin) return false; // no Origin/Referer → not a real browser navigation
+
   const allow = process.env.ALLOWED_ORIGIN;
   try {
     const o = new URL(origin).host;
@@ -56,7 +78,13 @@ export async function POST(req: NextRequest) {
     return errorResponse({ error: 'bad_request', message: 'Cross-origin requests are not allowed.' }, 403);
   }
 
-  const body = (await req.json().catch(() => null)) as { input?: string; turnstileToken?: string } | null;
+  // Reject empty or obviously-automated user agents before spending anything.
+  const ua = req.headers.get('user-agent') ?? '';
+  if (!ua || BOT_UA_RE.test(ua)) {
+    return errorResponse({ error: 'bad_request', message: 'Unsupported client.' }, 403);
+  }
+
+  const body = (await req.json().catch(() => null)) as { input?: string } | null;
   if (!body || typeof body.input !== 'string') {
     return errorResponse({ error: 'bad_request' }, 400);
   }
@@ -64,23 +92,19 @@ export async function POST(req: NextRequest) {
   const ip = clientIp(req.headers);
   const idHash = await hashIp(ip);
 
-  // 1. Turnstile
-  const human = await verifyTurnstile(body.turnstileToken, ip);
-  if (!human) return errorResponse({ error: 'captcha_failed' }, 400);
-
-  // 2. Rate limit (competitor clicks share this path, so they count too)
+  // 1. Rate limit (competitor clicks share this path, so they count too)
   const rl = await checkRateLimit(idHash);
   if (!rl.ok) {
     return errorResponse({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec }, 429);
   }
 
-  // 3. Global spend kill switch
+  // 2. Global spend kill switch
   const spend = await getSpendStatus();
   if (spend.overCap) {
     return errorResponse({ error: 'capacity' }, 503);
   }
 
-  // 4. Normalize + (optionally) resolve a company name to a domain
+  // 3. Normalize + (optionally) resolve a company name to a domain
   const norm = normalizeInput(body.input);
   if (norm.kind === 'invalid') {
     return errorResponse({ error: 'invalid_domain', message: norm.reason }, 422);

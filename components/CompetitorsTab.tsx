@@ -24,13 +24,13 @@ export default function CompetitorsTab({
           <button
             key={c.domain}
             onClick={() => onSearch(c.domain)}
-            className="retro-panel-flat p-3 text-left hover:bg-neon transition-colors group"
+            className="retro-panel-flat p-3 text-left hover:bg-card-hover hover:border-accent transition-colors group"
           >
             <div className="font-bold flex items-center justify-between">
               <span className="truncate">{c.name || c.domain}</span>
               <span className="opacity-0 group-hover:opacity-100 transition-opacity font-display">→</span>
             </div>
-            <div className="text-sm text-cobalt break-all">{c.domain}</div>
+            <div className="text-sm text-accent-soft break-all">{c.domain}</div>
             {c.industries && <div className="text-[0.7rem] text-slate mt-1">{c.industries}</div>}
           </button>
         ))}

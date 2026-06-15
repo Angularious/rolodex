@@ -29,11 +29,6 @@ const SCREENS: Record<
     title: 'NO RECORDS',
     sub: (e) => e.message || "Tomba doesn't have data on this company.",
   },
-  captcha_failed: {
-    emoji: '🤖',
-    title: 'ARE YOU A ROBOT?',
-    sub: () => 'Bot check failed. Refresh the page and try again.',
-  },
   server_error: {
     emoji: '📺',
     title: 'SERVICE INTERRUPTED',
@@ -56,9 +51,9 @@ function formatRetry(sec: number): string {
 export default function ErrorScreen({ error, onReset }: { error: SearchError; onReset: () => void }) {
   const screen = SCREENS[error.error] ?? SCREENS.server_error;
   return (
-    <div className="retro-panel pop-in p-8 my-6 text-center bg-[#11163a] text-white border-neon">
+    <div className="retro-panel pop-in p-8 my-6 text-center bg-ink-2/70">
       <div className="text-6xl mb-3">{screen.emoji}</div>
-      <h2 className="font-display text-4xl text-neon mb-2">{screen.title}</h2>
+      <h2 className="font-display text-4xl text-accent-soft mb-2">{screen.title}</h2>
       <p className="opacity-90 max-w-md mx-auto mb-6">{screen.sub(error)}</p>
       <button className="retro-btn" onClick={onReset}>
         ◄ Insert Coin

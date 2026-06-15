@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import Turnstile, { type BoundTurnstileObject } from 'react-turnstile';
 import { readSearchStream } from '@/lib/stream';
 import { normalizeInput } from '@/lib/normalize';
 import type {
@@ -22,8 +21,8 @@ import LocationsTab from '@/components/LocationsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
+import FieldBackground from '@/components/FieldBackground';
 
-const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 const EXAMPLES = ['stripe.com', 'google.com', 'spacex.com', 'figma.com'];
 
 interface Report {
@@ -77,17 +76,10 @@ export default function Home() {
   const [forcedDept, setForcedDept] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Turnstile: keep one fresh single-use token ready; after each search we
-  // call reset() on the bound widget to mint the next one. Remounting per
-  // search caused Cloudflare to return duplicate tokens (rejected as
-  // timeout-or-duplicate), which broke every search after the first.
-  const turnstile = useRef<BoundTurnstileObject | null>(null);
-  const tokenRef = useRef<string | null>(null);
-  const pending = useRef<{ value: string } | null>(null);
   const inFlight = useRef(false);
 
   const doSearch = useCallback(
-    async (value: string, token: string | undefined) => {
+    async (value: string) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setError(null);
@@ -102,7 +94,7 @@ export default function Home() {
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ input: value, turnstileToken: token }),
+          body: JSON.stringify({ input: value }),
         });
 
         if (!res.ok) {
@@ -161,7 +153,7 @@ export default function Home() {
       const v = value.trim();
       if (!v || inFlight.current) return;
 
-      // Client-side pre-check mirrors the server to avoid burning a token.
+      // Client-side pre-check mirrors the server to avoid a wasted round-trip.
       const norm = normalizeInput(v);
       if (norm.kind === 'invalid') {
         setError({ error: 'invalid_domain', message: norm.reason });
@@ -169,37 +161,7 @@ export default function Home() {
         return;
       }
 
-      if (!SITE_KEY) {
-        doSearch(v, undefined);
-        return;
-      }
-
-      const token = tokenRef.current;
-      if (token) {
-        // Consume the ready token, then mint a fresh one for the next search.
-        tokenRef.current = null;
-        doSearch(v, token);
-        turnstile.current?.reset();
-      } else {
-        // No token yet — queue; onVerify will run it once the widget solves.
-        pending.current = { value: v };
-        turnstile.current?.reset();
-      }
-    },
-    [doSearch],
-  );
-
-  const onTurnstileVerify = useCallback(
-    (token: string, bound: BoundTurnstileObject) => {
-      turnstile.current = bound;
-      const p = pending.current;
-      if (p) {
-        pending.current = null;
-        doSearch(p.value, token);
-        bound.reset(); // mint the next token in the background
-      } else {
-        tokenRef.current = token; // keep ready for the next search
-      }
+      doSearch(v);
     },
     [doSearch],
   );
@@ -224,56 +186,75 @@ export default function Home() {
 
   return (
     <ToastProvider>
+      {/* Animated dot-field background + legibility scrim */}
+      <FieldBackground />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
+      />
+
       <div className="min-h-screen flex flex-col">
         {/* Header */}
-        <header className="border-b-4 border-ink bg-neon">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-            <button onClick={reset} className="font-display text-2xl sm:text-3xl flex items-center gap-2">
-              <span className="text-signal">▤</span> COMPANY INTEL
+        <header className="sticky top-0 z-30 border-b border-line bg-ink/70 backdrop-blur-md">
+          <div className="mx-auto max-w-6xl px-5 h-[54px] flex items-center justify-between">
+            <button
+              onClick={reset}
+              className="font-display text-base sm:text-lg tracking-tight flex items-center gap-2 text-cream"
+            >
+              <span className="text-accent">◇</span> COMPANY ROLODEX
             </button>
             <a
               href="https://orthogonal.com"
               target="_blank"
               rel="noreferrer"
               onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
-              className="font-display text-sm sm:text-base bg-ink text-neon px-3 py-1.5 rounded border-2 border-ink hover:bg-cobalt-deep transition-colors"
+              className="font-mono text-[0.7rem] uppercase tracking-[0.18em] rounded-full border border-line px-3 py-1.5 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors"
             >
-              ORTHOGONAL.COM ↗
+              Powered by orthogonal.com ↗
             </a>
           </div>
         </header>
 
         <main className="mx-auto max-w-6xl w-full px-4 flex-1">
           {/* Search */}
-          <section className={`text-center ${status === 'idle' ? 'py-16 sm:py-24' : 'py-6'}`}>
+          <section className={`text-center ${status === 'idle' ? 'py-20 sm:py-28' : 'py-8'}`}>
             {status === 'idle' && (
               <>
-                <h1 className="font-display text-5xl sm:text-7xl text-white drop-shadow-[3px_3px_0_#0b1220] mb-3">
-                  COMPANY <span className="text-neon">INTEL</span>
+                <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
+                <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
+                  Company <em>Rolodex</em>
                 </h1>
-                <p className="text-white/90 max-w-xl mx-auto mb-8">
+                <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
                   Type a company domain or name. Get an instant intelligence report — profile,
                   departments, locations, competitors, and people.
                 </p>
               </>
             )}
 
-            <form onSubmit={onSubmit} className="retro-panel p-3 sm:p-4 max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
+            <form
+              onSubmit={onSubmit}
+              className="retro-panel p-2 max-w-2xl mx-auto flex flex-col sm:flex-row gap-2 rise"
+            >
               <input
-                className="retro-input"
+                className="retro-input border-transparent bg-transparent focus:shadow-none"
                 placeholder="google.com  or  SpaceX"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 autoFocus
                 spellCheck={false}
               />
-              <button type="submit" className="retro-btn whitespace-nowrap" disabled={status === 'searching'}>
-                {status === 'searching' ? 'Scanning…' : '► Run Report'}
+              <button
+                type="submit"
+                className="retro-btn retro-btn-blue whitespace-nowrap"
+                disabled={status === 'searching'}
+              >
+                {status === 'searching' ? 'Scanning…' : 'Run report →'}
               </button>
             </form>
 
             {status === 'idle' && (
-              <div className="mt-4 flex flex-wrap gap-2 justify-center">
+              <div className="mt-5 flex flex-wrap gap-2 justify-center items-center rise">
+                <span className="hud mr-1">Try</span>
                 {EXAMPLES.map((ex) => (
                   <button
                     key={ex}
@@ -281,35 +262,11 @@ export default function Home() {
                       setInput(ex);
                       requestSearch(ex);
                     }}
-                    className="retro-btn retro-btn-sm retro-btn-blue"
+                    className="retro-btn retro-btn-ghost retro-btn-sm font-mono"
                   >
                     {ex}
                   </button>
                 ))}
-              </div>
-            )}
-
-            {SITE_KEY && (
-              <div className="mt-3 flex justify-center">
-                <Turnstile
-                  sitekey={SITE_KEY}
-                  onVerify={onTurnstileVerify}
-                  onLoad={(_widgetId, bound) => {
-                    turnstile.current = bound;
-                  }}
-                  onError={() => {
-                    tokenRef.current = null;
-                  }}
-                  onExpire={() => {
-                    tokenRef.current = null;
-                    turnstile.current?.reset();
-                  }}
-                  refreshExpired="auto"
-                  // Invisible unless a real interactive challenge is needed —
-                  // the compliant way to hide the widget (vs CSS, which breaks it).
-                  appearance="interaction-only"
-                  theme="light"
-                />
               </div>
             )}
           </section>

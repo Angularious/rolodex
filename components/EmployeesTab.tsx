@@ -241,7 +241,7 @@ export default function EmployeesTab({
                           ev.stopPropagation();
                           copyEmail(e.email);
                         }}
-                        className="text-cobalt underline"
+                        className="text-accent-soft underline"
                       >
                         {e.email}
                       </button>
@@ -251,7 +251,7 @@ export default function EmployeesTab({
                   </td>
                   <td onClick={(ev) => ev.stopPropagation()}>
                     {e.linkedin ? (
-                      <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-cobalt font-display">
+                      <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-accent-soft font-display">
                         in↗
                       </a>
                     ) : (
@@ -283,14 +283,14 @@ export default function EmployeesTab({
             </div>
             <div className="flex items-center gap-3 text-sm">
               {e.email ? (
-                <button onClick={(ev) => { ev.stopPropagation(); copyEmail(e.email); }} className="text-cobalt underline break-all">
+                <button onClick={(ev) => { ev.stopPropagation(); copyEmail(e.email); }} className="text-accent-soft underline break-all">
                   {e.email}
                 </button>
               ) : (
                 <span className="text-slate">no email</span>
               )}
               {e.linkedin && (
-                <a href={e.linkedin} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="text-cobalt font-display ml-auto">
+                <a href={e.linkedin} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="text-accent-soft font-display ml-auto">
                   in↗
                 </a>
               )}
@@ -307,14 +307,14 @@ export default function EmployeesTab({
 
       {/* Load more banner */}
       {totalAvailable > employees.length && (
-        <div className="retro-panel-flat panel-accent mt-4 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#11163a] text-white">
+        <div className="retro-panel-flat mt-4 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-accent/40 bg-[rgba(139,60,255,0.08)]">
           <div>
-            <span className="font-display text-lg text-neon">
+            <span className="font-display text-lg text-accent-soft">
               {employees.length} of ~{totalAvailable.toLocaleString()} results.
             </span>{' '}
-            <span className="text-sm opacity-90">Connect Orthogonal to unlock the rest.</span>
+            <span className="text-sm text-cream-dim">Connect Orthogonal to unlock the rest.</span>
           </div>
-          <button className="retro-btn retro-btn-sm" onClick={onConnectClick}>
+          <button className="retro-btn retro-btn-blue retro-btn-sm" onClick={onConnectClick}>
             Connect Orthogonal →
           </button>
         </div>

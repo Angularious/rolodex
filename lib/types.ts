@@ -81,7 +81,6 @@ export type StreamMessage =
 export interface SearchError {
   error:
     | 'bad_request'
-    | 'captcha_failed'
     | 'rate_limited'
     | 'capacity'
     | 'invalid_domain'

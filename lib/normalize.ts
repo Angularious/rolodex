@@ -37,9 +37,17 @@ export type NormalizeResult =
  * a company name needing resolution, or invalid. Pure + synchronous so it can
  * run identically on client and server.
  */
+// Longest plausible company name / domain. Anything beyond this is rejected
+// up front so an oversized payload can never reach a paid Orthogonal call.
+const MAX_INPUT_LEN = 100;
+
 export function normalizeInput(raw: string): NormalizeResult {
-  let input = (raw ?? '').trim().toLowerCase();
-  if (!input) return { kind: 'invalid', reason: 'Enter a company domain or name.' };
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return { kind: 'invalid', reason: 'Enter a company domain or name.' };
+  if (trimmed.length > MAX_INPUT_LEN) {
+    return { kind: 'invalid', reason: 'Input is too long — enter a company domain or name.' };
+  }
+  let input = trimmed.toLowerCase();
 
   // Pull a hostname out of anything URL-shaped.
   if (input.includes('://') || input.includes('/')) {

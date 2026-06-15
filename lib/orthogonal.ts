@@ -3,7 +3,9 @@
 // Orthogonal key never reaches the browser.
 
 const ORTHOGONAL_URL = 'https://api.orthogonal.com/v1/run';
-const TIMEOUT_MS = 12000;
+// Kept under Vercel's serverless function ceiling so a slow upstream call is
+// aborted by us (clean per-section error) rather than killed by the platform.
+const TIMEOUT_MS = 9000;
 
 export class OrthogonalError extends Error {
   status: number;

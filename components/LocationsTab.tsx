@@ -25,8 +25,8 @@ export default function LocationsTab({ locations }: { locations: LocationCount[]
               </div>
               <span className="ml-auto font-display text-xl">{l.count}</span>
             </div>
-            <div className="h-2 mt-2 border border-ink/40 rounded-sm overflow-hidden bg-white">
-              <div className="h-full bg-signal" style={{ width: `${pct}%` }} />
+            <div className="h-1.5 mt-2 rounded-full overflow-hidden bg-card border border-line">
+              <div className="h-full bg-accent-soft" style={{ width: `${pct}%` }} />
             </div>
           </div>
         );
