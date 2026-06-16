@@ -27,7 +27,7 @@ const SCREENS: Record<
   not_found: {
     emoji: '👻',
     title: 'NO RECORDS',
-    sub: (e) => e.message || "Tomba doesn't have data on this company.",
+    sub: (e) => e.message || "We don't have data on this company.",
   },
   server_error: {
     emoji: '📺',

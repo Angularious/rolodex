@@ -1,13 +1,45 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Employee } from '@/lib/types';
-import { confidenceClass, countryName, csvEscape } from '@/lib/format';
+import type { Employee, RevealResult } from '@/lib/types';
+import { countryName, csvEscape } from '@/lib/format';
 import { useToast } from './Toast';
 
-type SortKey = 'confidence' | 'name' | 'seniority' | 'department';
+type SortKey = 'name' | 'seniority' | 'department';
 
-const SENIORITY_RANK: Record<string, number> = { executive: 0, senior: 1, junior: 2 };
+// Best-effort ordering for Company Enrich seniority labels.
+const SENIORITY_RANK: Record<string, number> = {
+  founder: 0,
+  owner: 0,
+  'c-suite': 1,
+  cxo: 1,
+  partner: 2,
+  vp: 3,
+  director: 4,
+  head: 5,
+  principal: 6,
+  senior: 7,
+  manager: 8,
+  mid: 9,
+  entry: 10,
+  junior: 10,
+};
+
+export type RevealFn = (payload: {
+  ceId?: string | null;
+  linkedin?: string | null;
+}) => Promise<RevealResult>;
+
+interface RevealState {
+  loading: boolean;
+  tried: boolean;
+  email: string | null;
+  phone: string | null;
+}
+
+function rowKey(e: Employee): string {
+  return e.ceId || e.linkedin || e.fullName;
+}
 
 export function EmployeesSkeleton() {
   return (
@@ -26,6 +58,7 @@ export default function EmployeesTab({
   loading,
   forcedDepartment,
   domain,
+  onReveal,
   onConnectClick,
 }: {
   employees: Employee[];
@@ -33,17 +66,16 @@ export default function EmployeesTab({
   loading: boolean;
   forcedDepartment: string | null;
   domain: string;
+  onReveal: RevealFn;
   onConnectClick: () => void;
 }) {
   const toast = useToast();
   const [dept, setDept] = useState('');
   const [seniority, setSeniority] = useState('');
   const [country, setCountry] = useState('');
-  const [hasEmail, setHasEmail] = useState(false);
   const [hasLinkedIn, setHasLinkedIn] = useState(false);
-  const [minConfidence, setMinConfidence] = useState(0);
-  const [sort, setSort] = useState<SortKey>('confidence');
-  const [showLow, setShowLow] = useState(false);
+  const [sort, setSort] = useState<SortKey>('seniority');
+  const [revealed, setRevealed] = useState<Record<string, RevealState>>({});
 
   useEffect(() => {
     if (forcedDepartment) setDept(forcedDepartment);
@@ -64,12 +96,9 @@ export default function EmployeesTab({
 
   const filtered = useMemo(() => {
     const list = employees.filter((e) => {
-      if (!showLow && e.confidence < 20) return false;
-      if (e.confidence < minConfidence) return false;
       if (dept && e.department !== dept) return false;
       if (seniority && e.seniority !== seniority) return false;
       if (country && e.country !== country) return false;
-      if (hasEmail && !e.email) return false;
       if (hasLinkedIn && !e.linkedin) return false;
       return true;
     });
@@ -79,18 +108,33 @@ export default function EmployeesTab({
           return a.fullName.localeCompare(b.fullName);
         case 'department':
           return (a.department || 'zzz').localeCompare(b.department || 'zzz');
-        case 'seniority':
-          return (
-            (SENIORITY_RANK[a.seniority ?? ''] ?? 9) - (SENIORITY_RANK[b.seniority ?? ''] ?? 9)
-          );
         default:
-          return b.confidence - a.confidence;
+          return (
+            (SENIORITY_RANK[(a.seniority ?? '').toLowerCase()] ?? 99) -
+            (SENIORITY_RANK[(b.seniority ?? '').toLowerCase()] ?? 99)
+          );
       }
     });
     return list;
-  }, [employees, showLow, minConfidence, dept, seniority, country, hasEmail, hasLinkedIn, sort]);
+  }, [employees, dept, seniority, country, hasLinkedIn, sort]);
 
-  const lowCount = employees.filter((e) => e.confidence < 20).length;
+  const reveal = async (e: Employee) => {
+    const key = rowKey(e);
+    if (revealed[key]?.loading || revealed[key]?.tried) return;
+    setRevealed((r) => ({ ...r, [key]: { loading: true, tried: false, email: null, phone: null } }));
+    try {
+      const res = await onReveal({ ceId: e.ceId, linkedin: e.linkedin });
+      setRevealed((r) => ({
+        ...r,
+        [key]: { loading: false, tried: true, email: res.email, phone: res.phone ?? null },
+      }));
+      if (res.email) toast(`Revealed ${res.email}`);
+      else toast('No email found');
+    } catch {
+      setRevealed((r) => ({ ...r, [key]: { loading: false, tried: true, email: null, phone: null } }));
+      toast('Reveal failed');
+    }
+  };
 
   const copyEmail = (email: string | null) => {
     if (!email) return;
@@ -98,23 +142,25 @@ export default function EmployeesTab({
   };
 
   const copyAllEmails = () => {
-    const emails = filtered.map((e) => e.email).filter(Boolean).join(', ');
-    if (!emails) return toast('No emails in current view');
-    navigator.clipboard.writeText(emails).then(() => toast(`Copied ${filtered.filter((e) => e.email).length} emails`));
+    const emails = filtered
+      .map((e) => revealed[rowKey(e)]?.email)
+      .filter(Boolean)
+      .join(', ');
+    if (!emails) return toast('Reveal some emails first');
+    navigator.clipboard.writeText(emails).then(() => toast('Copied revealed emails'));
   };
 
   const exportCsv = () => {
-    const header = ['Name', 'Title', 'Department', 'Seniority', 'Email', 'LinkedIn', 'Country', 'Confidence'];
+    const header = ['Name', 'Title', 'Department', 'Seniority', 'Email', 'LinkedIn', 'Country'];
     const rows = filtered.map((e) =>
       [
         e.fullName,
         e.title ?? '',
         e.department ?? '',
         e.seniority ?? '',
-        e.email ?? '',
+        revealed[rowKey(e)]?.email ?? '',
         e.linkedin ?? '',
         e.country ?? '',
-        String(e.confidence),
       ]
         .map((v) => csvEscape(v))
         .join(','),
@@ -133,6 +179,26 @@ export default function EmployeesTab({
   if (loading && employees.length === 0) return <EmployeesSkeleton />;
   if (!loading && employees.length === 0)
     return <div className="retro-panel-flat p-6 text-center text-slate">No employee records found.</div>;
+
+  const EmailCell = ({ e }: { e: Employee }) => {
+    const st = revealed[rowKey(e)];
+    if (st?.email)
+      return (
+        <button onClick={() => copyEmail(st.email)} className="text-accent-soft underline break-all">
+          {st.email}
+        </button>
+      );
+    if (st?.tried) return <span className="text-slate text-xs">not found</span>;
+    return (
+      <button
+        onClick={() => reveal(e)}
+        disabled={st?.loading}
+        className="retro-btn retro-btn-sm retro-btn-blue"
+      >
+        {st?.loading ? '…' : 'Reveal'}
+      </button>
+    );
+  };
 
   return (
     <div className="pop-in">
@@ -168,29 +234,13 @@ export default function EmployeesTab({
             ))}
           </select>
         </Field>
-        <Field label={`Min confidence: ${minConfidence}`}>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={minConfidence}
-            onChange={(e) => setMinConfidence(Number(e.target.value))}
-            className="retro-range w-32"
-          />
-        </Field>
         <Field label="Sort">
           <select className="retro-select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-            <option value="confidence">Confidence ↓</option>
-            <option value="name">Name A–Z</option>
             <option value="seniority">Seniority</option>
+            <option value="name">Name A–Z</option>
             <option value="department">Department</option>
           </select>
         </Field>
-        <label className="flex items-center gap-1.5 text-sm font-bold cursor-pointer">
-          <input type="checkbox" checked={hasEmail} onChange={(e) => setHasEmail(e.target.checked)} />
-          Has email
-        </label>
         <label className="flex items-center gap-1.5 text-sm font-bold cursor-pointer">
           <input type="checkbox" checked={hasLinkedIn} onChange={(e) => setHasLinkedIn(e.target.checked)} />
           Has LinkedIn
@@ -203,7 +253,7 @@ export default function EmployeesTab({
         </span>
         <div className="flex gap-2">
           <button className="retro-btn retro-btn-sm" onClick={copyAllEmails}>
-            ⎘ Copy emails
+            ⎘ Copy revealed
           </button>
           <button className="retro-btn retro-btn-sm retro-btn-blue" onClick={exportCsv}>
             ⤓ Export CSV
@@ -224,32 +274,19 @@ export default function EmployeesTab({
                 <th>Email</th>
                 <th>In</th>
                 <th>Country</th>
-                <th title="Emails are pattern-inferred and not always verified">Conf. ⓘ</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((e, i) => (
-                <tr key={`${e.email ?? e.fullName}-${i}`} onClick={() => copyEmail(e.email)} title="Click row to copy email">
+                <tr key={`${rowKey(e)}-${i}`}>
                   <td className="font-bold">{e.fullName}</td>
                   <td>{e.title || '—'}</td>
                   <td>{e.department || '—'}</td>
                   <td>{e.seniority || '—'}</td>
                   <td>
-                    {e.email ? (
-                      <button
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          copyEmail(e.email);
-                        }}
-                        className="text-accent-soft underline"
-                      >
-                        {e.email}
-                      </button>
-                    ) : (
-                      '—'
-                    )}
+                    <EmailCell e={e} />
                   </td>
-                  <td onClick={(ev) => ev.stopPropagation()}>
+                  <td>
                     {e.linkedin ? (
                       <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-accent-soft font-display">
                         in↗
@@ -259,9 +296,6 @@ export default function EmployeesTab({
                     )}
                   </td>
                   <td>{e.country || '—'}</td>
-                  <td>
-                    <span className={`badge ${confidenceClass(e.confidence)}`}>{e.confidence}</span>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -272,38 +306,23 @@ export default function EmployeesTab({
       {/* Mobile card stack */}
       <div className="md:hidden space-y-2">
         {filtered.map((e, i) => (
-          <div key={`${e.email ?? e.fullName}-${i}`} className="retro-panel-flat p-3" onClick={() => copyEmail(e.email)}>
+          <div key={`${rowKey(e)}-${i}`} className="retro-panel-flat p-3">
             <div className="flex justify-between items-start gap-2">
               <div className="font-bold">{e.fullName}</div>
-              <span className={`badge ${confidenceClass(e.confidence)}`}>{e.confidence}</span>
-            </div>
-            <div className="text-sm text-slate">{e.title || '—'}</div>
-            <div className="text-xs text-slate mb-1">
-              {[e.department, e.seniority, e.country].filter(Boolean).join(' · ') || '—'}
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              {e.email ? (
-                <button onClick={(ev) => { ev.stopPropagation(); copyEmail(e.email); }} className="text-accent-soft underline break-all">
-                  {e.email}
-                </button>
-              ) : (
-                <span className="text-slate">no email</span>
-              )}
               {e.linkedin && (
-                <a href={e.linkedin} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="text-accent-soft font-display ml-auto">
+                <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-accent-soft font-display">
                   in↗
                 </a>
               )}
             </div>
+            <div className="text-sm text-slate">{e.title || '—'}</div>
+            <div className="text-xs text-slate mb-2">
+              {[e.department, e.seniority, e.country].filter(Boolean).join(' · ') || '—'}
+            </div>
+            <EmailCell e={e} />
           </div>
         ))}
       </div>
-
-      {lowCount > 0 && (
-        <button className="text-sm text-slate underline mt-3" onClick={() => setShowLow((v) => !v)}>
-          {showLow ? 'Hide' : 'Show'} {lowCount} low-confidence (&lt;20) result{lowCount === 1 ? '' : 's'}
-        </button>
-      )}
 
       {/* Load more banner */}
       {totalAvailable > employees.length && (
