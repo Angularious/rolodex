@@ -107,6 +107,7 @@ export default function DecisionMakersTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {list.map((d) => {
           const st = revealed[rowKey(d)];
+          const noContact = !d.hasWorkEmail && !d.hasPersonalEmail && !d.hasPhone;
           return (
             <div key={rowKey(d)} className="retro-panel-flat p-3">
               <div className="flex justify-between items-start gap-2">
@@ -151,6 +152,14 @@ export default function DecisionMakersTab({
                   </div>
                 ) : st?.tried ? (
                   <span className="text-slate text-xs">No contact found</span>
+                ) : noContact ? (
+                  <button
+                    disabled
+                    title="No work email, personal email, or phone on file — a reveal would cost money and return nothing"
+                    className="retro-btn retro-btn-sm opacity-40 cursor-not-allowed"
+                  >
+                    No contact available
+                  </button>
                 ) : (
                   <button
                     onClick={() => reveal(d)}
