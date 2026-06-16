@@ -30,17 +30,17 @@ interface RawDecisionMakers {
   metadata?: { total_results?: number | null } | null;
 }
 
-interface RawContactInfo {
-  emails?: string[] | null;
-  work_emails?: string[] | null;
-  personal_emails?: string[] | null;
-  phones?: string[] | null;
+// /v1/linkedin/enrich nests contact arrays under `profile`, with SINGULAR field
+// names (work_email, personal_email, phone) — each is a string[].
+interface RawProfileContact {
+  email?: string[] | null;
+  work_email?: string[] | null;
+  personal_email?: string[] | null;
+  phone?: string[] | null;
 }
 
 interface RawLinkedinEnrich {
-  contact_info?: RawContactInfo | null;
-  // some shapes nest the profile under a single-key map; be defensive
-  profiles?: Record<string, { contact_info?: RawContactInfo | null }> | null;
+  profile?: RawProfileContact | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,14 +69,9 @@ export async function revealByLinkedin(
     { profile },
     'GET',
   );
-  let info = res?.contact_info ?? null;
-  if (!info && res?.profiles) {
-    const first = Object.values(res.profiles)[0];
-    info = first?.contact_info ?? null;
-  }
-  const email =
-    info?.work_emails?.[0] ?? info?.emails?.[0] ?? info?.personal_emails?.[0] ?? null;
-  const phone = info?.phones?.[0] ?? null;
+  const p = res?.profile ?? null;
+  const email = p?.work_email?.[0] ?? p?.email?.[0] ?? p?.personal_email?.[0] ?? null;
+  const phone = p?.phone?.[0] ?? null;
   return { email, phone };
 }
 
