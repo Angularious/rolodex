@@ -1,40 +1,50 @@
 import { NextRequest } from 'next/server';
 import { clientIp, hashIp } from '@/lib/hash';
 import { checkRateLimit } from '@/lib/ratelimit';
-import { getSpendStatus, recordSpend } from '@/lib/spend';
+import { reserveSpend, reconcileSpend } from '@/lib/spend';
 import { normalizeInput } from '@/lib/normalize';
+import { originAllowed, isBotUserAgent } from '@/lib/guard';
 import {
-  findCompany,
-  emailCount,
-  similar,
-  locationDist,
-  domainSearch,
-  resolveNameToDomain,
+  enrichByDomain,
+  enrichByName,
+  profileById,
+  workforce,
+  peopleSearch,
   mapCompany,
-  mapOrgExtras,
-  mergeCompany,
-  mapCounts,
-  mapCompetitors,
-  mapLocations,
-  mapEmployees,
-  type OrgExtras,
-} from '@/lib/tomba';
+  mapWorkforce,
+  mapPeople,
+} from '@/lib/companyenrich';
+import { decisionMakers, mapDecisionMakers } from '@/lib/contactout';
+import { similar, mapCompetitors } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// A name-input search resolves the domain (≤9s) and then streams 5 parallel
-// Tomba calls (≤9s), so the worst case exceeds Vercel's default 10s function
-// limit. Raise the ceiling so the platform doesn't kill the request mid-stream.
+// A name-input search resolves the company (≤9s) and then streams several
+// parallel calls (≤9s), so the worst case exceeds Vercel's default 10s limit.
 export const maxDuration = 30;
 
-const EMPLOYEE_LIMIT = 50;
+// Default employee page size — the main cost knob ($0.0245/person).
+const PAGE_SIZE = 25;
 
-// Obvious non-browser / scripted clients. We don't block ALL non-browser UAs
-// (accessibility tools, etc.), just well-known automated signatures.
-const BOT_UA_RE =
-  /(curl|wget|python-requests|python-urllib|go-http-client|java\/|libwww|httpclient|scrapy|headlesschrome|phantomjs|bot|spider|crawler)/i;
+// Per-call prices (USD) for the spend ledger. Keep in sync with the marketplace.
+const PRICE = {
+  enrich: 0.01225, // company-enrich /companies/enrich or /companies
+  workforce: 0.06125, // company-enrich /companies/workforce
+  perPerson: 0.0245, // company-enrich /people/search (per result)
+  competitors: 0.01, // tomba /v1/similar
+  decisionMakers: 0.05, // contactout /people/decision-makers (reveal off)
+};
+
+// Worst-case cost of one search, reserved against the hard cap up front and
+// reconciled to the real amount after. Includes a possible profile-fallback call.
+const ESTIMATE_USD =
+  PRICE.enrich * 2 +
+  PRICE.workforce +
+  PRICE.perPerson * PAGE_SIZE +
+  PRICE.competitors +
+  PRICE.decisionMakers;
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -43,44 +53,13 @@ function errorResponse(err: SearchError, status: number): Response {
   });
 }
 
-// CORS lock: only accept requests that originate from our own deployment.
-// Browsers send `Origin` on POST (even same-origin); we fall back to the
-// `Referer` origin. A request with NEITHER is not coming from our UI — reject
-// it (this is what closes the "curl with no Origin header" bypass).
-function originAllowed(req: NextRequest): boolean {
-  let origin = req.headers.get('origin');
-  if (!origin) {
-    const referer = req.headers.get('referer');
-    if (referer) {
-      try {
-        origin = new URL(referer).origin;
-      } catch {
-        /* malformed referer — treated as missing below */
-      }
-    }
-  }
-  if (!origin) return false; // no Origin/Referer → not a real browser navigation
-
-  const allow = process.env.ALLOWED_ORIGIN;
-  try {
-    const o = new URL(origin).host;
-    if (allow && o === new URL(allow).host) return true;
-    return o === req.headers.get('host');
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(req: NextRequest) {
   const started = Date.now();
 
   if (!originAllowed(req)) {
     return errorResponse({ error: 'bad_request', message: 'Cross-origin requests are not allowed.' }, 403);
   }
-
-  // Reject empty or obviously-automated user agents before spending anything.
-  const ua = req.headers.get('user-agent') ?? '';
-  if (!ua || BOT_UA_RE.test(ua)) {
+  if (isBotUserAgent(req)) {
     return errorResponse({ error: 'bad_request', message: 'Unsupported client.' }, 403);
   }
 
@@ -98,35 +77,44 @@ export async function POST(req: NextRequest) {
     return errorResponse({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec }, 429);
   }
 
-  // 2. Global spend kill switch
-  const spend = await getSpendStatus();
-  if (spend.overCap) {
-    return errorResponse({ error: 'capacity' }, 503);
-  }
-
-  // 3. Normalize + (optionally) resolve a company name to a domain
+  // 2. Normalize + validate FIRST (no spend committed yet) so bad input can't
+  //    leak reservations against the cap.
   const norm = normalizeInput(body.input);
   if (norm.kind === 'invalid') {
     return errorResponse({ error: 'invalid_domain', message: norm.reason }, 422);
   }
 
+  // 3. Global spend HARD cap — atomically reserve this search's worst-case cost.
+  //    If it would exceed the daily cap, reject before spending anything. The
+  //    real cost is reconciled against this reservation once the search finishes.
+  //    Every path AFTER this point must reconcile (success or early return).
+  const reservation = await reserveSpend(ESTIMATE_USD);
+  if (!reservation.allowed) {
+    return errorResponse({ error: 'capacity' }, 503);
+  }
+
   let domain: string;
   let resolvedFrom: string | null = null;
-  let nameResolutionCost = 0;
+  let preResolvedCompany: Company | null = null;
+  let initialSpent = 0;
   if (norm.kind === 'name') {
     try {
-      const resolved = await resolveNameToDomain(norm.name);
-      nameResolutionCost = 1; // domain-suggestions is a paid call ($0.01)
-      if (!resolved) {
-        await recordSpend(nameResolutionCost);
+      const raw = await enrichByName(norm.name);
+      initialSpent += PRICE.enrich;
+      const resolvedDomain = raw?.domain;
+      if (!resolvedDomain) {
+        // Release the unused part of the reservation before bailing.
+        await reconcileSpend(initialSpent - ESTIMATE_USD);
         return errorResponse(
-          { error: 'not_found', message: `Couldn't resolve "${norm.name}" to a company domain.` },
+          { error: 'not_found', message: `Couldn't resolve "${norm.name}" to a company.` },
           404,
         );
       }
-      domain = resolved;
+      domain = resolvedDomain.toLowerCase();
       resolvedFrom = norm.name;
+      preResolvedCompany = mapCompany(raw, domain);
     } catch {
+      await reconcileSpend(initialSpent - ESTIMATE_USD);
       return errorResponse({ error: 'server_error' }, 502);
     }
   } else {
@@ -135,69 +123,78 @@ export async function POST(req: NextRequest) {
 
   // ---- Stream the report as NDJSON ----
   // No caching or in-flight dedup: per Orthogonal's data policy we never persist
-  // returned data, so every search fires fresh Tomba calls.
+  // returned data, so every search fires fresh calls.
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let paidCalls = nameResolutionCost;
+      let spentUsd = initialSpent;
       const write = (msg: StreamMessage) =>
         controller.enqueue(encoder.encode(JSON.stringify(msg) + '\n'));
 
       write({ type: 'meta', domain, resolvedFrom });
 
-      // The company card needs accept_all / email-pattern / richer socials that
-      // live on the domain-search response, so we merge org extras in and may
-      // re-emit the company once the employee call resolves.
-      let companyBase: Company | null = null;
-      let orgExtras: OrgExtras | null = null;
-      let companyEmitted = false;
-      const emitCompany = () => {
-        if (!companyBase) return;
-        write({ type: 'company', data: mergeCompany(companyBase, orgExtras) });
-        companyEmitted = true;
-      };
+      // Workforce is fetched once and reused: the company-profile job falls back
+      // to its embedded company_id if the by-domain profile lookup fails.
+      const wfPromise = workforce(domain);
+
+      const companyJob = preResolvedCompany
+        ? Promise.resolve().then(() => write({ type: 'company', data: preResolvedCompany }))
+        : enrichByDomain(domain)
+            .then((raw) => {
+              spentUsd += PRICE.enrich;
+              write({ type: 'company', data: mapCompany(raw, domain) });
+            })
+            .catch(async () => {
+              // Fallback: derive the profile from the workforce company_id.
+              try {
+                const wf = await wfPromise;
+                const id = (wf as { company_id?: string | null })?.company_id;
+                if (id) {
+                  const raw = await profileById(id);
+                  spentUsd += PRICE.enrich;
+                  write({ type: 'company', data: mapCompany(raw, domain) });
+                  return;
+                }
+              } catch {
+                /* fall through to error */
+              }
+              write({ type: 'company', data: null, error: 'unavailable' });
+            });
 
       const jobs: Promise<unknown>[] = [
-        findCompany(domain)
+        companyJob,
+        wfPromise
           .then((raw) => {
-            paidCalls++;
-            companyBase = mapCompany(raw, domain);
-            emitCompany();
+            spentUsd += PRICE.workforce;
+            write({ type: 'workforce', data: mapWorkforce(raw) });
           })
-          .catch(() => write({ type: 'company', data: null, error: 'unavailable' })),
-        emailCount(domain)
+          .catch(() => write({ type: 'workforce', data: null, error: 'unavailable' })),
+        peopleSearch(domain, PAGE_SIZE)
           .then((raw) => {
-            paidCalls++;
-            write({ type: 'counts', data: mapCounts(raw) });
+            const mapped = mapPeople(raw);
+            spentUsd += PRICE.perPerson * mapped.employees.length;
+            write({ type: 'employees', data: mapped.employees, totalAvailable: mapped.totalAvailable });
           })
-          .catch(() => write({ type: 'counts', data: null, error: 'unavailable' })),
+          .catch(() => write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' })),
         similar(domain)
           .then((raw) => {
-            paidCalls++;
+            spentUsd += PRICE.competitors;
             write({ type: 'competitors', data: mapCompetitors(raw) });
           })
           .catch(() => write({ type: 'competitors', data: null, error: 'unavailable' })),
-        locationDist(domain)
+        decisionMakers(domain, PAGE_SIZE)
           .then((raw) => {
-            paidCalls++;
-            write({ type: 'locations', data: mapLocations(raw) });
+            spentUsd += PRICE.decisionMakers;
+            write({ type: 'decisionmakers', data: mapDecisionMakers(raw) });
           })
-          .catch(() => write({ type: 'locations', data: null, error: 'unavailable' })),
-        domainSearch(domain, EMPLOYEE_LIMIT)
-          .then((raw) => {
-            paidCalls++;
-            const mapped = mapEmployees(raw);
-            orgExtras = mapOrgExtras(raw);
-            write({ type: 'employees', data: mapped.employees, totalAvailable: mapped.totalAvailable });
-            if (companyEmitted && orgExtras) emitCompany();
-          })
-          .catch(() => write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' })),
+          .catch(() => write({ type: 'decisionmakers', data: null, error: 'unavailable' })),
       ];
 
       await Promise.allSettled(jobs);
 
-      const cost = Math.round(paidCalls * 0.01 * 100) / 100;
-      if (paidCalls > 0) await recordSpend(paidCalls);
+      const cost = Math.round(spentUsd * 100) / 100;
+      // Reconcile the worst-case reservation down to the real cost.
+      await reconcileSpend(spentUsd - ESTIMATE_USD);
 
       const durationMs = Date.now() - started;
       write({ type: 'done', cost, durationMs });

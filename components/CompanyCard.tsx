@@ -2,7 +2,6 @@
 
 import type { Company } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
-import { useToast } from './Toast';
 
 const SOCIAL_META: { key: keyof Company['socials']; label: string; icon: string }[] = [
   { key: 'linkedin', label: 'LinkedIn', icon: 'in' },
@@ -42,21 +41,9 @@ export function CompanyCardSkeleton({ domain }: { domain: string }) {
 }
 
 export default function CompanyCard({ company }: { company: Company }) {
-  const toast = useToast();
   const indexed = timeAgo(company.lastUpdated);
-
-  const copyPattern = () => {
-    if (!company.emailPattern) return;
-    const example = company.emailPattern
-      .replace('{first}', 'jane')
-      .replace('{last}', 'doe')
-      .replace('{f}', 'j')
-      .replace('{l}', 'd');
-    const addr = example.includes('@') ? example : `${example}@${company.domain}`;
-    navigator.clipboard.writeText(addr).then(() => toast('Email pattern copied'));
-  };
-
   const socials = SOCIAL_META.filter((s) => company.socials[s.key]);
+  const rounds = company.fundingRounds ?? [];
 
   return (
     <div className="retro-panel panel-accent p-5 my-4 pop-in">
@@ -90,7 +77,7 @@ export default function CompanyCard({ company }: { company: Company }) {
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0">
-          {indexed && <span className="text-[0.7rem] text-slate">Tomba indexed {indexed}</span>}
+          {indexed && <span className="text-[0.7rem] text-slate">Indexed {indexed}</span>}
           {socials.length > 0 && (
             <div className="flex gap-1.5 mt-1">
               {socials.map((s) => (
@@ -115,22 +102,31 @@ export default function CompanyCard({ company }: { company: Company }) {
         <Stat label="Size" value={company.size} />
         <Stat label="Revenue" value={company.revenue} />
         <Stat label="HQ" value={company.hqLocation} />
-        <Stat label="Email host" value={company.emailProvider} />
-        <div>
-          <div className="text-[0.65rem] uppercase tracking-wide text-slate font-bold">Pattern</div>
-          {company.emailPattern ? (
-            <button
-              onClick={copyPattern}
-              className="text-sm font-mono text-accent-soft hover:text-accent underline"
-              title="Copy example email"
-            >
-              {company.emailPattern}
-            </button>
-          ) : (
-            <div className="text-sm">—</div>
-          )}
-        </div>
+        <Stat label="Total funding" value={company.fundingTotal} />
+        <Stat label="Ticker" value={company.stockSymbol} />
       </div>
+
+      {rounds.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-line">
+          <div className="text-[0.65rem] uppercase tracking-wide text-slate font-bold mb-2">
+            Funding {company.fundingStage ? `· ${company.fundingStage.replace(/_/g, ' ')}` : ''}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {rounds.slice(0, 8).map((r, i) => (
+              <div
+                key={`${r.type ?? 'round'}-${i}`}
+                className="flex items-baseline justify-between gap-3 text-sm"
+              >
+                <span className="font-bold whitespace-nowrap">{r.type || 'Round'}</span>
+                <span className="font-mono text-accent-soft whitespace-nowrap">{r.amount || '—'}</span>
+                <span className="text-slate text-xs truncate flex-1 text-right">
+                  {[r.date ? r.date.slice(0, 10) : null, r.investors].filter(Boolean).join(' · ')}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {company.tech.length > 0 && (
         <div className="mt-4 pt-3 border-t border-line">

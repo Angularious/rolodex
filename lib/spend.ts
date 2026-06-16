@@ -5,8 +5,6 @@
 
 import { getSupabase, supabaseConfigured } from './supabase';
 
-const COST_PER_CALL = 0.01;
-
 export function dailyCapUsd(): number {
   const raw = parseFloat(process.env.DAILY_SPEND_CAP_USD ?? '20');
   return Number.isFinite(raw) && raw > 0 ? raw : 20;
@@ -39,14 +37,43 @@ export async function getSpendStatus(): Promise<SpendStatus> {
   return { spent, cap, ratio, overCap: spent >= cap, warn: ratio >= 0.8 };
 }
 
-/** Record `calls` paid API calls ($0.01 each) against the spend log. */
-export async function recordSpend(calls: number): Promise<void> {
-  if (calls <= 0 || !supabaseConfigured()) return;
+/**
+ * Atomic HARD-cap reservation. Reserves `estimateUsd` (a worst-case cost) against
+ * today's ledger only if it keeps the day under the cap. Returns whether the
+ * request may proceed. Concurrent reservations are serialized in Postgres, so —
+ * unlike the old check-then-record flow — a burst can't blow past the cap.
+ *
+ * Local dev (no Supabase): always allowed, no cap. On a DB error we fail CLOSED
+ * (deny) — this is the money guard.
+ */
+export async function reserveSpend(estimateUsd: number): Promise<{ allowed: boolean }> {
+  if (!supabaseConfigured()) return { allowed: true }; // local dev: no cap
   const sb = getSupabase();
-  if (!sb) return;
-  const cost = Math.round(calls * COST_PER_CALL * 100) / 100;
-  const { error } = await sb.rpc('record_spend', { p_cost: cost });
-  if (error) console.error('[spend.record]', error.message);
+  if (!sb) return { allowed: true };
+  const estimate = Math.round(estimateUsd * 100) / 100;
+  const { data, error } = await sb.rpc('reserve_spend', {
+    p_estimate: estimate,
+    p_cap: dailyCapUsd(),
+  });
+  if (error) {
+    console.error('[spend.reserve]', error.message);
+    return { allowed: false }; // fail closed
+  }
+  const res = data as { allowed?: boolean } | null;
+  return { allowed: Boolean(res?.allowed) };
 }
 
-export { COST_PER_CALL };
+/**
+ * Reconcile a reservation once the real cost is known. Pass `actual - estimate`
+ * (usually negative — we reserved worst-case). Adds a correcting row so the
+ * ledger nets to the true spend. A no-op when the delta rounds to zero.
+ */
+export async function reconcileSpend(deltaUsd: number): Promise<void> {
+  if (!supabaseConfigured()) return;
+  const sb = getSupabase();
+  if (!sb) return;
+  const delta = Math.round(deltaUsd * 100) / 100;
+  if (delta === 0) return;
+  const { error } = await sb.rpc('record_spend', { p_cost: delta });
+  if (error) console.error('[spend.reconcile]', error.message);
+}

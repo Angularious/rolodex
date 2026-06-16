@@ -1,6 +1,6 @@
 'use client';
 
-import type { Counts } from '@/lib/types';
+import type { Workforce } from '@/lib/types';
 
 function Bar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
@@ -12,27 +12,38 @@ function Bar({ value, max }: { value: number; max: number }) {
 }
 
 export default function DepartmentsTab({
-  counts,
+  workforce,
   onPickDepartment,
 }: {
-  counts: Counts | null;
+  workforce: Workforce | null;
   onPickDepartment: (dept: string) => void;
 }) {
-  if (!counts) return <Unavailable />;
-  const maxDept = Math.max(1, ...counts.departments.map((d) => d.count));
-  const maxSen = Math.max(1, ...counts.seniority.map((d) => d.count));
+  if (!workforce) return <Unavailable />;
+  const maxDept = Math.max(1, ...workforce.departments.map((d) => d.count));
+
+  // Optional growth from the headcount history (oldest → newest).
+  const hist = workforce.history;
+  const growth =
+    hist && hist.length > 1
+      ? { from: hist[0], to: hist[hist.length - 1] }
+      : null;
 
   return (
     <div className="pop-in">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-        <SummaryStat label="Total emails" value={counts.total.toLocaleString()} />
-        <SummaryStat label="Personal" value={counts.personalEmails.toLocaleString()} />
-        <SummaryStat label="Generic" value={counts.genericEmails.toLocaleString()} />
+        <SummaryStat label="Employees" value={workforce.total.toLocaleString()} />
+        <SummaryStat label="Range" value={workforce.range ?? '—'} />
+        {growth && (
+          <SummaryStat
+            label={`Since ${growth.from.date.slice(0, 7)}`}
+            value={`+${(growth.to.total - growth.from.total).toLocaleString()}`}
+          />
+        )}
       </div>
 
       <h3 className="font-display text-xl mb-2">By department</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-        {counts.departments.map((d) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {workforce.departments.map((d) => (
           <button
             key={d.name}
             onClick={() => onPickDepartment(d.name)}
@@ -41,29 +52,12 @@ export default function DepartmentsTab({
           >
             <div className="flex justify-between items-baseline">
               <span className="font-bold">{d.name}</span>
-              <span className="font-display text-lg">{d.count}</span>
+              <span className="font-display text-lg">{d.count.toLocaleString()}</span>
             </div>
             <Bar value={d.count} max={maxDept} />
           </button>
         ))}
       </div>
-
-      {counts.seniority.length > 0 && (
-        <>
-          <h3 className="font-display text-xl mb-2">By seniority</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {counts.seniority.map((d) => (
-              <div key={d.name} className="retro-panel-flat p-3">
-                <div className="flex justify-between items-baseline">
-                  <span className="font-bold">{d.name}</span>
-                  <span className="font-display text-lg">{d.count}</span>
-                </div>
-                <Bar value={d.count} max={maxSen} />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -82,7 +76,7 @@ export function Unavailable() {
     <div className="retro-panel-flat p-6 text-center text-slate">
       <div className="text-3xl mb-1">📭</div>
       <div className="font-display text-lg">Data unavailable</div>
-      <div className="text-sm">Tomba didn&apos;t return this section for the company.</div>
+      <div className="text-sm">This section wasn&apos;t available for this company.</div>
     </div>
   );
 }

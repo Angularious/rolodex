@@ -1,6 +1,6 @@
 'use client';
 
-export type TabId = 'employees' | 'departments' | 'locations' | 'competitors';
+export type TabId = 'employees' | 'decisionmakers' | 'departments' | 'competitors';
 
 export interface TabDef {
   id: TabId;

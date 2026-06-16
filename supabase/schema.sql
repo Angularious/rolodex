@@ -39,6 +39,8 @@ alter table search_events enable row level security;
 
 -- ---------------------------------------------------------------- functions
 -- Atomic rate limit: counts the three windows, logs the attempt if allowed.
+-- A per-key advisory lock serializes concurrent requests for the same id_hash so
+-- the count-then-insert can't over-allow under a burst.
 create or replace function check_and_log_rate(
   p_id text, p_min int, p_hour int, p_day int
 ) returns json
@@ -47,6 +49,8 @@ as $$
 declare
   c int;
 begin
+  perform pg_advisory_xact_lock(1, hashtext(p_id));
+
   select count(*) into c from rate_events
     where id_hash = p_id and created_at > now() - interval '1 minute';
   if c >= p_min then
@@ -79,17 +83,49 @@ as $$
   where created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';
 $$;
 
--- Append to the spend ledger.
+-- Append to the spend ledger. (Used for reconciliation; can be negative to
+-- correct an over-reservation — SUM handles negative rows fine.)
 create or replace function record_spend(p_cost numeric) returns void
 language sql
 as $$
   insert into spend_events (cost_usd) values (p_cost);
 $$;
 
+-- HARD spend cap, atomic. Reserves `p_estimate` against today's ledger ONLY if it
+-- keeps the day under `p_cap`. A global advisory lock serializes all reservations
+-- so concurrent requests can't each pass the check before any of them commit
+-- (the race that made the old check-then-record cap a soft cap). The route
+-- reserves a worst-case estimate up front, then reconciles the real cost after.
+create or replace function reserve_spend(p_estimate numeric, p_cap numeric)
+returns json
+language plpgsql
+as $$
+declare
+  spent numeric;
+begin
+  perform pg_advisory_xact_lock(2, 0);
+
+  select coalesce(sum(cost_usd), 0)::numeric into spent
+    from spend_events
+    where created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+
+  if spent + p_estimate > p_cap then
+    return json_build_object('allowed', false, 'spent', spent);
+  end if;
+
+  insert into spend_events (cost_usd) values (p_estimate);
+  return json_build_object('allowed', true, 'spent', spent + p_estimate);
+end;
+$$;
+
 -- ---------------------------------------------------------------- maintenance
--- The ledgers grow unbounded. Optionally schedule periodic pruning with the
--- pg_cron extension (Dashboard → Database → Extensions → enable pg_cron):
+-- The ledgers grow unbounded; on the free tier (500MB) you MUST prune, or the
+-- DB fills and the per-request COUNT(*) rate-limit queries slow down. Enable the
+-- pg_cron extension (Dashboard → Database → Extensions → pg_cron), then run:
 --   select cron.schedule('prune', '0 4 * * *', $$
---     delete from rate_events  where created_at < now() - interval '2 days';
+--     delete from rate_events   where created_at < now() - interval '2 days';
+--     delete from spend_events  where created_at < now() - interval '40 days';
 --     delete from search_events where created_at < now() - interval '90 days';
 --   $$);
+-- Note: keep spend_events at least ~40 days so day_spend() always covers the
+-- current UTC day with margin.

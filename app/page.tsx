@@ -6,18 +6,18 @@ import { normalizeInput } from '@/lib/normalize';
 import type {
   Company,
   Competitor,
-  Counts,
+  Workforce,
   Employee,
-  LocationCount,
+  DecisionMaker,
+  RevealResult,
   SearchError,
 } from '@/lib/types';
 import { ToastProvider } from '@/components/Toast';
 import CompanyCard, { CompanyCardSkeleton } from '@/components/CompanyCard';
-import DataQualityBanner from '@/components/DataQualityBanner';
 import Tabs, { type TabId } from '@/components/Tabs';
 import EmployeesTab from '@/components/EmployeesTab';
+import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
-import LocationsTab from '@/components/LocationsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
@@ -31,15 +31,15 @@ interface Report {
   resolvedFrom: string | null;
   company: Company | null;
   companyError: boolean;
-  counts: Counts | null;
-  countsLoading: boolean;
+  workforce: Workforce | null;
+  workforceLoading: boolean;
   competitors: Competitor[] | null;
   competitorsLoading: boolean;
-  locations: LocationCount[] | null;
-  locationsLoading: boolean;
   employees: Employee[];
   employeesTotal: number;
   employeesLoading: boolean;
+  decisionMakers: DecisionMaker[] | null;
+  decisionMakersLoading: boolean;
   cost: number;
   durationMs: number;
 }
@@ -51,15 +51,15 @@ function freshReport(inputEcho: string): Report {
     resolvedFrom: null,
     company: null,
     companyError: false,
-    counts: null,
-    countsLoading: true,
+    workforce: null,
+    workforceLoading: true,
     competitors: null,
     competitorsLoading: true,
-    locations: null,
-    locationsLoading: true,
     employees: [],
     employeesTotal: 0,
     employeesLoading: true,
+    decisionMakers: null,
+    decisionMakersLoading: true,
     cost: 0,
     durationMs: 0,
   };
@@ -112,23 +112,23 @@ export default function Home() {
                 return { ...r, domain: msg.domain, resolvedFrom: msg.resolvedFrom ?? null };
               case 'company':
                 return { ...r, company: msg.data, companyError: !msg.data && !!msg.error };
-              case 'counts':
-                return { ...r, counts: msg.data, countsLoading: false };
+              case 'workforce':
+                return { ...r, workforce: msg.data, workforceLoading: false };
               case 'competitors':
                 return { ...r, competitors: msg.data, competitorsLoading: false };
-              case 'locations':
-                return { ...r, locations: msg.data, locationsLoading: false };
               case 'employees':
                 return { ...r, employees: msg.data, employeesTotal: msg.totalAvailable, employeesLoading: false };
+              case 'decisionmakers':
+                return { ...r, decisionMakers: msg.data, decisionMakersLoading: false };
               case 'done':
                 return {
                   ...r,
                   cost: msg.cost,
                   durationMs: msg.durationMs,
-                  countsLoading: false,
+                  workforceLoading: false,
                   competitorsLoading: false,
-                  locationsLoading: false,
                   employeesLoading: false,
+                  decisionMakersLoading: false,
                 };
               default:
                 return r;
@@ -175,6 +175,24 @@ export default function Home() {
     fetch('/api/track', { method: 'POST' }).catch(() => {});
     window.open('https://orthogonal.com', '_blank', 'noopener');
   };
+
+  // On-demand email/phone reveal for one person (tiered server-side).
+  const revealContact = useCallback(
+    async (payload: { ceId?: string | null; linkedin?: string | null }): Promise<RevealResult> => {
+      const res = await fetch('/api/reveal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          domain: report?.domain,
+          ceId: payload.ceId ?? undefined,
+          linkedin: payload.linkedin ?? undefined,
+        }),
+      });
+      if (!res.ok) throw new Error('reveal_failed');
+      return (await res.json()) as RevealResult;
+    },
+    [report?.domain],
+  );
 
   const reset = () => {
     setStatus('idle');
@@ -298,15 +316,13 @@ export default function Home() {
                 <CompanyCardSkeleton domain={report.domain} />
               )}
 
-              {report.company?.acceptAll && <DataQualityBanner />}
-
               <Tabs
                 active={activeTab}
                 onChange={setActiveTab}
                 tabs={[
                   { id: 'employees', label: 'Employees', count: report.employeesTotal || report.employees.length || null },
-                  { id: 'departments', label: 'Departments', count: report.counts?.departments.length ?? null },
-                  { id: 'locations', label: 'Locations', count: report.locations?.length ?? null },
+                  { id: 'decisionmakers', label: 'Decision-makers', count: report.decisionMakers?.length ?? null },
+                  { id: 'departments', label: 'Departments', count: report.workforce?.departments.length ?? null },
                   { id: 'competitors', label: 'Competitors', count: report.competitors?.length ?? null },
                 ]}
               />
@@ -319,19 +335,26 @@ export default function Home() {
                     loading={report.employeesLoading}
                     forcedDepartment={forcedDept}
                     domain={report.domain}
+                    onReveal={revealContact}
                     onConnectClick={connectOrthogonal}
+                  />
+                )}
+                {activeTab === 'decisionmakers' && (
+                  <DecisionMakersTab
+                    decisionMakers={report.decisionMakers}
+                    loading={report.decisionMakersLoading}
+                    onReveal={revealContact}
                   />
                 )}
                 {activeTab === 'departments' && (
                   <DepartmentsTab
-                    counts={report.counts}
+                    workforce={report.workforce}
                     onPickDepartment={(d) => {
                       setForcedDept(d);
                       setActiveTab('employees');
                     }}
                   />
                 )}
-                {activeTab === 'locations' && <LocationsTab locations={report.locations} />}
                 {activeTab === 'competitors' && (
                   <CompetitorsTab competitors={report.competitors} onSearch={(d) => requestSearch(d)} />
                 )}
