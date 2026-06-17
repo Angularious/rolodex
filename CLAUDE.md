@@ -8,8 +8,11 @@ workforce, people) + **ContactOut** (decision-makers, on-demand email/phone reve
 aesthetic. "Powered by orthogonal.com" demo — not Orthogonal-owned branding.
 
 - **Repo:** github.com/Angularious/rolodex (branch `main`; `gh` authed as Angularious)
-- **Live:** rolodex-lime.vercel.app (Vercel, auto-deploys on push to `main`)
+- **Live:** rolodex-lime.vercel.app (Vercel, auto-deploys on push to `main`; feature
+  branches get preview deploys). Workflow is **PR-based** — branch, PR, merge.
 - **Owner:** Jerry Du (jerry@orthogonal.sh)
+- **Status:** Tomba→Company Enrich+ContactOut migration is **merged & live** (PRs #1–3).
+  Prod cap is **$40/day**; pg_cron pruning is enabled.
 
 ## Stack
 Next.js 14 App Router · React 18 · Tailwind 3 + custom retro CSS · Supabase
@@ -49,9 +52,17 @@ Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
 Cost: ≈ **$0.74/search** at 25 employees (profile $0.012 + workforce $0.061 +
-people×25 $0.61 + competitors $0.01 + decision-makers $0.05). Reveals are billed
-on demand on top ($0.12 Company Enrich / $0.55 ContactOut). `PAGE_SIZE` in
-`app/api/search/route.ts` is the cost knob.
+people×25 $0.61 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
+`app/api/search/route.ts` is the cost knob; the people-search line dominates.
+Reveals are billed on demand on top:
+- **Employee reveal** — CE `/people/email` hit = $0.12; CE miss → ContactOut
+  fallback = $0.12 + $0.55 = **$0.67** (so a CE miss costs *more* than going
+  straight to ContactOut). CE coverage on senior people is good (verified).
+- **Decision-maker reveal** — ContactOut only = **$0.55** (no CE id available).
+- **CAVEAT:** the ledger records the people-search cost on the *returned* count,
+  but Company Enrich bills on the *requested* `pageSize`. For companies returning
+  <25 people, recorded spend slightly under-counts the real invoice. The hard cap
+  is unaffected (it reserves worst-case `pageSize` up front).
 
 ## Orthogonal / provider specifics
 - Proxy pattern (server-only): `POST https://api.orthogonal.com/v1/run`,
@@ -62,6 +73,13 @@ on demand on top ($0.12 Company Enrich / $0.55 ContactOut). `PAGE_SIZE` in
   POST is signalled by whether params go in `query` or `body`.
 - **GOTCHA: `company-enrich /companies/enrich` has BOTH a GET (by domain) and a POST
   (by name/social) at the same path.** Pass `query` for by-domain, `body` for by-name.
+- **GOTCHA: ContactOut's two endpoints have DIFFERENT shapes — don't conflate them.**
+  `/v1/people/decision-makers` → `{ profiles: { "<linkedin-url>": {...,
+  contact_availability:{work_email,personal_email,phone}} } }` (a map keyed by URL,
+  PLURAL-ish availability flags). `/v1/linkedin/enrich` → `{ profile: { work_email:[],
+  personal_email:[], phone:[], email:[] } }` (single `profile`, SINGULAR names, each a
+  string[]). Reading the wrong shape silently returns null AND still charges — this
+  was the PR #2 bug.
 - **Spend ledger is in DOLLARS** — reserve/reconcile pass dollar amounts (per-call
   prices vary by provider). Don't revert to a flat per-call multiplier.
 - Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
@@ -73,12 +91,12 @@ on demand on top ($0.12 Company Enrich / $0.55 ContactOut). `PAGE_SIZE` in
 - Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (service-role, server-only).
 - Run `supabase/schema.sql` once in the SQL editor. Tables: `rate_events`,
   `spend_events`, `search_events`. Functions: `check_and_log_rate` (advisory-locked),
-  `day_spend`, `record_spend`, `reserve_spend` (atomic hard cap). **Re-run the
-  schema after pulling these changes** — `reserve_spend` + the rate-limit lock are new.
-- **Free-tier ops (required for reliability):**
-  1. **Enable `pg_cron`** (Dashboard → Database → Extensions) and schedule the
-     pruning block at the bottom of `schema.sql` — the ledgers grow unbounded and
-     will fill the 500MB free DB / slow the per-request COUNT queries.
+  `day_spend`, `record_spend`, `reserve_spend` (atomic hard cap). Prod DB is current;
+  **if you recreate the project, run the full `supabase/schema.sql`.**
+- **Free-tier ops (both DONE in prod — keep this way):**
+  1. **`pg_cron` enabled** + a daily `prune` job (04:00 UTC) trimming `rate_events`
+     (>2d), `spend_events` (>40d), `search_events` (>90d) — see bottom of `schema.sql`.
+     Without it the ledgers fill the 500MB free DB / slow the per-request COUNTs.
   2. The daily **`/api/cron/keepalive`** Vercel cron (see `vercel.json`) keeps the
      project from pausing after 7 days idle (a paused DB → spend check fails closed
      → whole site 503s). Optionally set `CRON_SECRET` to protect it.
@@ -113,7 +131,14 @@ WAF/Firewall (dashboard-configured, no visible challenge) over a CAPTCHA.
   providers / localhost / IPs are rejected as invalid input (`lib/normalize.ts`).
 - Rate limits: **12/min, 60/hr, 120/day** per IP (loosened from 3/10/30 so
   exploring competitors doesn't lock users out). Competitor clicks count.
-- Spend cap: `DAILY_SPEND_CAP_USD` (default 20), editable. UTC-day bucket.
+- Spend cap: `DAILY_SPEND_CAP_USD` (code default 20; **prod set to 40**), editable.
+  UTC-day bucket. Atomic hard cap (reserve/reconcile) — see Abuse protection.
+- **Reveal is gated by coverage**: decision-makers with all three coverage flags ✕
+  (no work email / personal / phone) show a disabled, greyed "No contact available"
+  button so a guaranteed-empty $0.55 reveal can't be triggered (PR #3). Employees
+  have no pre-reveal coverage signal, so their Reveal button is always active.
+- Reveals share the per-IP rate-limit budget with searches (conservative — bounds
+  per-user spend). Email reveals are shown in-session only, never persisted.
 - "Powered by orthogonal.com" appears only in the footer (kept out of hero subtext
   and header to avoid redundancy). Header CTA = "ORTHOGONAL.COM ↗".
 - No privacy/ToS pages. No Slack alerts. `robots.txt` disallows all.
