@@ -93,6 +93,35 @@ Reveals are billed on demand on top:
   `spend_events`, `search_events`. Functions: `check_and_log_rate` (advisory-locked),
   `day_spend`, `record_spend`, `reserve_spend` (atomic hard cap). Prod DB is current;
   **if you recreate the project, run the full `supabase/schema.sql`.**
+- **All 4 functions have `set search_path = public, pg_temp` pinned** (clears the
+  Supabase "Function Search Path Mutable" linter warning; applied live 2026-06-17).
+  It's baked into the `create or replace` blocks in `schema.sql`, so a fresh recreate
+  comes up hardened. To patch an existing DB without re-pasting bodies, use
+  `alter function <name>(<argtypes>) set search_path = public, pg_temp;`.
+- **SHARED PROJECT: other Orthogonal demo sites use this same Supabase project.**
+  Rows are tagged with a `site` column and this site scopes itself to `SITE_ID`
+  (`lib/site.ts`, default `'rolodex'`, env-overridable). What's isolated vs. not:
+  - **Spend cap — ISOLATED.** `day_spend`/`reserve_spend`/`record_spend` take an
+    optional `p_site`; rolodex passes `SITE_ID`, so its daily cap counts only its
+    own `spend_events` rows. The advisory lock in `reserve_spend` is keyed per
+    site, so sites reserve in parallel. A busy sibling can no longer trip rolodex's
+    cap.
+  - **Analytics — ISOLATED.** `search_events` rows are tagged `site`; `/admin`
+    (`recentEvents`) filters to `SITE_ID`.
+  - **Rate limit — STILL POOLED (intentional).** `rate_events`/`check_and_log_rate`
+    are keyed by hashed IP only; a visitor's per-IP budget is shared across sibling
+    demos. That's conservative (good for abuse protection), so left as-is.
+  - **Back-compat:** `p_site = NULL` means "sum ALL rows" (legacy), so sibling
+    sites that DON'T pass a site keep their old pooled behavior unchanged. Until a
+    sibling adopts its own `SITE_ID`, its cap still counts rolodex's tagged rows;
+    rolodex is unaffected either way.
+  - **Historical rows are untagged (`site = NULL`)** — they pre-date this change and
+    can't be attributed, so they're excluded from rolodex's scoped views. Right
+    after the migration `/admin` and "spent today" look reset; they refill as new
+    tagged rows land (and old rows age out via the prune job anyway).
+  - DB migration applied live 2026-06-17. **Run `supabase/schema.sql` (or the
+    migration block) BEFORE deploying code that passes `p_site`** — otherwise the
+    3-arg RPC has no matching function and `reserveSpend` fails closed → 503s.
 - **Free-tier ops (both DONE in prod — keep this way):**
   1. **`pg_cron` enabled** + a daily `prune` job (04:00 UTC) trimming `rate_events`
      (>2d), `spend_events` (>40d), `search_events` (>90d) — see bottom of `schema.sql`.

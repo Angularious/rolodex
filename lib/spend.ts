@@ -2,8 +2,12 @@
 // Cap is read from DAILY_SPEND_CAP_USD at request time so it stays editable.
 // On a DB read error we fail CLOSED (treat as over cap) — this is the money
 // guard, so we'd rather block than risk unbounded spend during an outage.
+//
+// The Supabase project is SHARED with other demo sites; every ledger query is
+// scoped to SITE_ID so this site's cap is independent of the siblings'.
 
 import { getSupabase, supabaseConfigured } from './supabase';
+import { SITE_ID } from './site';
 
 export function dailyCapUsd(): number {
   const raw = parseFloat(process.env.DAILY_SPEND_CAP_USD ?? '20');
@@ -26,7 +30,7 @@ export async function getSpendStatus(): Promise<SpendStatus> {
     return { spent: 0, cap, ratio: 0, overCap: false, warn: false };
   }
 
-  const { data, error } = await sb.rpc('day_spend');
+  const { data, error } = await sb.rpc('day_spend', { p_site: SITE_ID });
   if (error) {
     console.error('[spend]', error.message);
     return { spent: cap, cap, ratio: 1, overCap: true, warn: true }; // fail closed
@@ -54,6 +58,7 @@ export async function reserveSpend(estimateUsd: number): Promise<{ allowed: bool
   const { data, error } = await sb.rpc('reserve_spend', {
     p_estimate: estimate,
     p_cap: dailyCapUsd(),
+    p_site: SITE_ID,
   });
   if (error) {
     console.error('[spend.reserve]', error.message);
@@ -74,6 +79,6 @@ export async function reconcileSpend(deltaUsd: number): Promise<void> {
   if (!sb) return;
   const delta = Math.round(deltaUsd * 100) / 100;
   if (delta === 0) return;
-  const { error } = await sb.rpc('record_spend', { p_cost: delta });
+  const { error } = await sb.rpc('record_spend', { p_cost: delta, p_site: SITE_ID });
   if (error) console.error('[spend.reconcile]', error.message);
 }

@@ -2,6 +2,7 @@
 // orthogonal.com) are stored as events with the pseudo-domain '__conversion__'.
 
 import { getSupabase } from './supabase';
+import { SITE_ID } from './site';
 
 export interface SearchEvent {
   ts: number;
@@ -18,6 +19,7 @@ export async function logSearch(ev: SearchEvent): Promise<void> {
   if (!sb) return;
   try {
     await sb.from('search_events').insert({
+      site: SITE_ID,
       ip_hash: ev.ipHash,
       domain: ev.domain,
       duration_ms: ev.durationMs,
@@ -55,6 +57,7 @@ export async function recentEvents(limit = 500): Promise<SearchEvent[]> {
   const { data, error } = await sb
     .from('search_events')
     .select('ip_hash, domain, duration_ms, cost_usd, success, created_at')
+    .eq('site', SITE_ID) // shared project: only this site's events
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error || !data) return [];
