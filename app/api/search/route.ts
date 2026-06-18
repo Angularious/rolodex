@@ -25,8 +25,14 @@ export const dynamic = 'force-dynamic';
 // parallel calls (≤9s), so the worst case exceeds Vercel's default 10s limit.
 export const maxDuration = 30;
 
-// Default employee page size — the main cost knob ($0.0245/person).
-const PAGE_SIZE = 25;
+// Default employee page size — the main cost knob ($0.0245/person, billed per
+// returned result).
+const PAGE_SIZE = 10;
+
+// Decision-makers page size. The /people/decision-makers call is a flat $0.05
+// regardless of per_page (reveal_info=false), so this is decoupled from
+// PAGE_SIZE — we keep it higher to surface more decision-makers for free.
+const DM_PAGE_SIZE = 25;
 
 // Per-call prices (USD) for the spend ledger. Keep in sync with the marketplace.
 const PRICE = {
@@ -182,7 +188,7 @@ export async function POST(req: NextRequest) {
             write({ type: 'competitors', data: mapCompetitors(raw) });
           })
           .catch(() => write({ type: 'competitors', data: null, error: 'unavailable' })),
-        decisionMakers(domain, PAGE_SIZE)
+        decisionMakers(domain, DM_PAGE_SIZE)
           .then((raw) => {
             spentUsd += PRICE.decisionMakers;
             write({ type: 'decisionmakers', data: mapDecisionMakers(raw) });
