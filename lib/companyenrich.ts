@@ -74,12 +74,28 @@ interface RawWorkforce {
   }> | null;
 }
 
+// One row of a person's experience timeline. `isMatched` flags the experience
+// at the SEARCHED company (so its position/department is the role we want to
+// show — not the person's headline role, which is often at another company).
+interface RawExperience {
+  type?: string | null;
+  company?: { id?: string | null; name?: string | null; domain?: string | null } | null;
+  companyName?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isCurrent?: boolean | null;
+  isMatched?: boolean | null;
+  position?: string | null;
+  seniority?: string | null;
+  department?: string | null;
+}
+
 interface RawPerson {
   id?: number | string | null;
   name?: string | null;
   first_name?: string | null;
   last_name?: string | null;
-  position?: string | null;
+  position?: string | null; // headline/primary role — NOT necessarily at this company
   seniority?: string | null;
   department?: string | null;
   location?: {
@@ -87,12 +103,7 @@ interface RawPerson {
     address?: string | null;
   } | null;
   socials?: { linkedin_url?: string | null } | null;
-  experiences?: Array<{
-    position?: string | null;
-    seniority?: string | null;
-    department?: string | null;
-    isCurrent?: boolean | null;
-  }> | null;
+  experiences?: RawExperience[] | null;
 }
 
 interface RawPeopleSearch {
@@ -212,9 +223,18 @@ function titleCase(s: string): string {
 
 export function deptLabel(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const head = raw.split('/')[0].trim().toLowerCase();
+  // people-search uses slash-delimited taxonomy paths with hyphenated segments
+  // (e.g. "human-resources/recruiting"); workforce uses snake_case keys. Fold
+  // both to the same key so labels (and the departments-tab filter) line up.
+  const head = raw.split('/')[0].trim().toLowerCase().replace(/-/g, '_');
   return DEPT_LABELS[head] ?? titleCase(head);
 }
+
+// Matched roles that aren't real employment — board seats, advisory, authorship.
+// An "Employees" list shouldn't include these (they showed up as noise: board
+// members, an "Amazon Best-Selling Author", etc.). Unambiguous phrasings only,
+// to avoid dropping real staff.
+const NON_EMPLOYEE_ROLE = /\b(board member|board of (directors|trustees)|audit committee|advisory board|advisor|trustee|best.?selling author|council member|investor|venture partner)\b/i;
 
 // ---------------------------------------------------------------------------
 // Mappers
@@ -299,20 +319,42 @@ export function mapPeople(raw: RawPeopleSearch): {
   totalAvailable: number;
 } {
   const rows = raw?.items ?? [];
-  const employees: Employee[] = rows.map((p) => {
-    const cur = (p.experiences ?? []).find((e) => e.isCurrent) ?? p.experiences?.[0];
-    const position = p.position ?? cur?.position ?? null;
-    const seniority = p.seniority ?? cur?.seniority ?? null;
-    const department = deptLabel(p.department ?? cur?.department);
+  const employees: Employee[] = [];
+  const seen = new Set<string>();
+
+  for (const p of rows) {
+    const exps = p.experiences ?? [];
+
+    // The role AT the searched company is the experience CompanyEnrich flags as
+    // matched — NOT the top-level headline (often a different employer). Prefer
+    // a current matched role; otherwise take any matched one.
+    const matched = exps.filter((e) => e.isMatched);
+    const role = matched.find((e) => e.isCurrent !== false) ?? matched[0];
+
+    // Relevance gate: no role at this company → not an employee here, skip.
+    if (!role) continue;
+    // Drop roles the source explicitly marks ended (where it bothers to).
+    if (role.isCurrent === false) continue;
+    // Drop non-employment affiliations (board/advisor/author).
+    if (NON_EMPLOYEE_ROLE.test(role.position ?? '')) continue;
+
+    // Fields come ONLY from the matched role, so a person's other-company
+    // headline can't leak in (the old bug: "founder" for an Amazon recruiter).
+    const position = role.position ?? null;
+    const seniority = role.seniority ?? null;
+    const department = deptLabel(role.department);
+
+    // Dedupe on LinkedIn URL (falls back to id/name) — the feed repeats people.
+    const key = (p.socials?.linkedin_url ?? '').toLowerCase() || String(p.id ?? p.name ?? '');
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+
     const code = p.location?.country?.code ? p.location.country.code.toUpperCase() : null;
-    return {
+    employees.push({
       ceId: p.id != null ? String(p.id) : null,
       firstName: p.first_name ?? null,
       lastName: p.last_name ?? null,
-      fullName:
-        p.name ||
-        [p.first_name, p.last_name].filter(Boolean).join(' ') ||
-        'Unknown',
+      fullName: p.name || [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Unknown',
       title: position,
       department,
       seniority,
@@ -320,7 +362,8 @@ export function mapPeople(raw: RawPeopleSearch): {
       country: code,
       location: p.location?.address ?? p.location?.country?.name ?? null,
       email: null,
-    };
-  });
+    });
+  }
+
   return { employees, totalAvailable: raw?.totalItems ?? employees.length };
 }
