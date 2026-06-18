@@ -51,9 +51,13 @@ Per Orthogonal's data policy, **returned company/people data is NEVER persisted*
 Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
-Cost: ≈ **$0.74/search** at 25 employees (profile $0.012 + workforce $0.061 +
-people×25 $0.61 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
-`app/api/search/route.ts` is the cost knob; the people-search line dominates.
+Cost: ≈ **$0.38/search** at 10 employees (profile $0.012 + workforce $0.061 +
+people×10 $0.245 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
+`app/api/search/route.ts` is the cost knob (per-result $0.0245); the people-search
+line dominates. **`DM_PAGE_SIZE` is decoupled from `PAGE_SIZE`** — the
+decision-makers call is a flat $0.05 regardless of `per_page` (`reveal_info=false`),
+so it stays at 25 to surface more decision-makers for free; only the employee
+people-search scales with count.
 Reveals are billed on demand on top:
 - **Employee reveal** — CE `/people/email` hit = $0.12; CE miss → ContactOut
   fallback = $0.12 + $0.55 = **$0.67** (so a CE miss costs *more* than going
