@@ -14,11 +14,15 @@ function Bar({ value, max }: { value: number; max: number }) {
 export default function DepartmentsTab({
   workforce,
   onPickDepartment,
+  error,
+  onRetry,
 }: {
   workforce: Workforce | null;
   onPickDepartment: (dept: string) => void;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
-  if (!workforce) return <Unavailable />;
+  if (!workforce) return error ? <SectionError onRetry={onRetry} /> : <Unavailable />;
   const maxDept = Math.max(1, ...workforce.departments.map((d) => d.count));
 
   // Optional growth from the headcount history (oldest → newest).
@@ -77,6 +81,24 @@ export function Unavailable() {
       <div className="text-3xl mb-1">📭</div>
       <div className="font-display text-lg">Data unavailable</div>
       <div className="text-sm">This section wasn&apos;t available for this company.</div>
+    </div>
+  );
+}
+
+// Shown when a section's live data call failed (timeout / upstream blip) rather
+// than the company genuinely having no data — distinct copy + a retry path so a
+// transient failure doesn't read as "no records."
+export function SectionError({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="retro-panel-flat p-6 text-center text-slate">
+      <div className="text-3xl mb-1">⚠️</div>
+      <div className="font-display text-lg text-accent-soft">Couldn&apos;t load this section</div>
+      <div className="text-sm mb-3">A live data call timed out — the rest of the report loaded fine.</div>
+      {onRetry && (
+        <button onClick={onRetry} className="retro-btn retro-btn-sm retro-btn-blue">
+          Retry report
+        </button>
+      )}
     </div>
   );
 }

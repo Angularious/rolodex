@@ -1,16 +1,20 @@
 'use client';
 
 import type { Competitor } from '@/lib/types';
-import { Unavailable } from './DepartmentsTab';
+import { Unavailable, SectionError } from './DepartmentsTab';
 
 export default function CompetitorsTab({
   competitors,
   onSearch,
+  error,
+  onRetry,
 }: {
   competitors: Competitor[] | null;
   onSearch: (domain: string) => void;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
-  if (!competitors) return <Unavailable />;
+  if (!competitors) return error ? <SectionError onRetry={onRetry} /> : <Unavailable />;
   if (competitors.length === 0)
     return <div className="retro-panel-flat p-6 text-center text-slate">No similar companies found.</div>;
 

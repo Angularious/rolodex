@@ -43,33 +43,58 @@ export async function callOrthogonal<T = unknown>(
     }
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(ORTHOGONAL_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({ api, path, [method === 'GET' ? 'query' : 'body']: payloadParams }),
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+  const body = JSON.stringify({ api, path, [method === 'GET' ? 'query' : 'body']: payloadParams });
+
+  // Retry once on a transient failure — an aborted (timed-out) request, a
+  // network error, or a 5xx upstream. These are the blips that otherwise leave
+  // a section silently empty. We do NOT retry 4xx or `success:false` (the
+  // provider rejected the request — a retry just fails again and may re-charge).
+  // maxDuration is 30s, so two 9s attempts fit within the function budget.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(ORTHOGONAL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body,
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      // Abort (timeout) or network error — transient, so retry.
+      clearTimeout(timer);
+      lastErr = err;
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (res.status >= 500) {
+      console.error(`[orthogonal] HTTP ${res.status} for ${api}${path} (attempt ${attempt + 1})`);
+      lastErr = new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status);
+      continue;
+    }
+    if (!res.ok) {
+      console.error(`[orthogonal] HTTP ${res.status} for ${api}${path}`);
+      throw new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status);
+    }
+
+    const json = (await res.json()) as { success?: boolean; data?: unknown; error?: unknown };
+    if (json.success === false) {
+      console.error(`[orthogonal] failed ${api}${path}:`, JSON.stringify(json.error));
+      throw new OrthogonalError(`Orthogonal call failed for ${api}${path}`, 502);
+    }
+    return json.data as T;
   }
 
-  if (!res.ok) {
-    console.error(`[orthogonal] HTTP ${res.status} for ${api}${path}`);
-    throw new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status);
-  }
-
-  const json = (await res.json()) as { success?: boolean; data?: unknown; error?: unknown };
-  if (json.success === false) {
-    console.error(`[orthogonal] failed ${api}${path}:`, JSON.stringify(json.error));
-    throw new OrthogonalError(`Orthogonal call failed for ${api}${path}`, 502);
-  }
-  return json.data as T;
+  // Both attempts exhausted on a transient failure.
+  console.error(`[orthogonal] giving up on ${api}${path} after retry`);
+  if (lastErr instanceof OrthogonalError) throw lastErr;
+  throw new OrthogonalError(`Orthogonal request to ${api}${path} failed`, 504);
 }
