@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { DecisionMaker } from '@/lib/types';
 import type { RevealFn } from './EmployeesTab';
 import { useToast } from './Toast';
-import { Unavailable } from './DepartmentsTab';
+import { Unavailable, SectionError } from './DepartmentsTab';
 
 interface RevealState {
   loading: boolean;
@@ -40,10 +40,14 @@ export default function DecisionMakersTab({
   decisionMakers,
   loading,
   onReveal,
+  error,
+  onRetry,
 }: {
   decisionMakers: DecisionMaker[] | null;
   loading: boolean;
   onReveal: RevealFn;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
   const toast = useToast();
   const [func, setFunc] = useState('');
@@ -61,7 +65,7 @@ export default function DecisionMakersTab({
   );
 
   if (loading && (!decisionMakers || decisionMakers.length === 0)) return <DecisionMakersSkeleton />;
-  if (!decisionMakers) return <Unavailable />;
+  if (!decisionMakers) return error ? <SectionError onRetry={onRetry} /> : <Unavailable />;
   if (decisionMakers.length === 0)
     return <div className="retro-panel-flat p-6 text-center text-slate">No decision-makers found.</div>;
 

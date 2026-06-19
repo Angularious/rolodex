@@ -33,13 +33,17 @@ interface Report {
   companyError: boolean;
   workforce: Workforce | null;
   workforceLoading: boolean;
+  workforceError: boolean;
   competitors: Competitor[] | null;
   competitorsLoading: boolean;
+  competitorsError: boolean;
   employees: Employee[];
   employeesTotal: number;
   employeesLoading: boolean;
+  employeesError: boolean;
   decisionMakers: DecisionMaker[] | null;
   decisionMakersLoading: boolean;
+  decisionMakersError: boolean;
   cost: number;
   durationMs: number;
 }
@@ -53,13 +57,17 @@ function freshReport(inputEcho: string): Report {
     companyError: false,
     workforce: null,
     workforceLoading: true,
+    workforceError: false,
     competitors: null,
     competitorsLoading: true,
+    competitorsError: false,
     employees: [],
     employeesTotal: 0,
     employeesLoading: true,
+    employeesError: false,
     decisionMakers: null,
     decisionMakersLoading: true,
+    decisionMakersError: false,
     cost: 0,
     durationMs: 0,
   };
@@ -113,13 +121,19 @@ export default function Home() {
               case 'company':
                 return { ...r, company: msg.data, companyError: !msg.data && !!msg.error };
               case 'workforce':
-                return { ...r, workforce: msg.data, workforceLoading: false };
+                return { ...r, workforce: msg.data, workforceLoading: false, workforceError: !msg.data && !!msg.error };
               case 'competitors':
-                return { ...r, competitors: msg.data, competitorsLoading: false };
+                return { ...r, competitors: msg.data, competitorsLoading: false, competitorsError: !msg.data && !!msg.error };
               case 'employees':
-                return { ...r, employees: msg.data, employeesTotal: msg.totalAvailable, employeesLoading: false };
+                return {
+                  ...r,
+                  employees: msg.data,
+                  employeesTotal: msg.totalAvailable,
+                  employeesLoading: false,
+                  employeesError: msg.data.length === 0 && !!msg.error,
+                };
               case 'decisionmakers':
-                return { ...r, decisionMakers: msg.data, decisionMakersLoading: false };
+                return { ...r, decisionMakers: msg.data, decisionMakersLoading: false, decisionMakersError: !msg.data && !!msg.error };
               case 'done':
                 return {
                   ...r,
@@ -337,6 +351,8 @@ export default function Home() {
                     domain={report.domain}
                     onReveal={revealContact}
                     onConnectClick={connectOrthogonal}
+                    error={report.employeesError}
+                    onRetry={() => requestSearch(report.domain)}
                   />
                 )}
                 {activeTab === 'decisionmakers' && (
@@ -344,6 +360,8 @@ export default function Home() {
                     decisionMakers={report.decisionMakers}
                     loading={report.decisionMakersLoading}
                     onReveal={revealContact}
+                    error={report.decisionMakersError}
+                    onRetry={() => requestSearch(report.domain)}
                   />
                 )}
                 {activeTab === 'departments' && (
@@ -353,10 +371,17 @@ export default function Home() {
                       setForcedDept(d);
                       setActiveTab('employees');
                     }}
+                    error={report.workforceError}
+                    onRetry={() => requestSearch(report.domain)}
                   />
                 )}
                 {activeTab === 'competitors' && (
-                  <CompetitorsTab competitors={report.competitors} onSearch={(d) => requestSearch(d)} />
+                  <CompetitorsTab
+                    competitors={report.competitors}
+                    onSearch={(d) => requestSearch(d)}
+                    error={report.competitorsError}
+                    onRetry={() => requestSearch(report.domain)}
+                  />
                 )}
               </div>
             </section>

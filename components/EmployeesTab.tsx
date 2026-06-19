@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Employee, RevealResult } from '@/lib/types';
 import { countryName, csvEscape } from '@/lib/format';
 import { useToast } from './Toast';
+import { SectionError } from './DepartmentsTab';
 
 type SortKey = 'name' | 'seniority' | 'department';
 
@@ -60,6 +61,8 @@ export default function EmployeesTab({
   domain,
   onReveal,
   onConnectClick,
+  error,
+  onRetry,
 }: {
   employees: Employee[];
   totalAvailable: number;
@@ -68,6 +71,8 @@ export default function EmployeesTab({
   domain: string;
   onReveal: RevealFn;
   onConnectClick: () => void;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
   const toast = useToast();
   const [dept, setDept] = useState('');
@@ -177,8 +182,10 @@ export default function EmployeesTab({
   };
 
   if (loading && employees.length === 0) return <EmployeesSkeleton />;
-  if (!loading && employees.length === 0)
+  if (!loading && employees.length === 0) {
+    if (error) return <SectionError onRetry={onRetry} />;
     return <div className="retro-panel-flat p-6 text-center text-slate">No employee records found.</div>;
+  }
 
   const EmailCell = ({ e }: { e: Employee }) => {
     const st = revealed[rowKey(e)];
