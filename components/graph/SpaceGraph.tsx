@@ -310,6 +310,8 @@ export default function SpaceGraph({
     // idle auto-rotate via OrbitControls; pause while the user interacts
     const controls = inst.controls();
     if (controls) {
+      controls.minDistance = 60; // cap zoom-in
+      controls.maxDistance = 520; // cap zoom-out so the graph never shrinks to a dot
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.45;
       const pause = () => {
@@ -342,22 +344,9 @@ export default function SpaceGraph({
     [onReveal],
   );
 
-  const onNodeClick = useCallback((node: GNode) => {
-    setSelected(node.data);
-    // fly the camera to frame the clicked node
-    const inst = fg.current;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const n = node as any;
-    if (inst && typeof n.x === 'number') {
-      const d = 40;
-      const r = Math.hypot(n.x, n.y, n.z) || 1;
-      inst.cameraPosition(
-        { x: n.x * (1 + d / r), y: n.y * (1 + d / r), z: n.z * (1 + d / r) },
-        { x: n.x, y: n.y, z: n.z },
-        900,
-      );
-    }
-  }, []);
+  // Just open the inspector — no camera move (the fly-to read as a jarring
+  // zoom-in/out reposition). The view stays exactly where the user left it.
+  const onNodeClick = useCallback((node: GNode) => setSelected(node.data), []);
 
   return (
     <div ref={wrapRef} className="graph-blue relative h-full w-full bg-[#020308]">

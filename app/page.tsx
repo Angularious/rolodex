@@ -311,9 +311,14 @@ export default function Home() {
       />
 
       <div className="min-h-screen flex flex-col">
-        {/* Header — minimal single line; in results it carries the search + toggle */}
-        <header className="sticky top-0 z-30 border-b border-line bg-ink/70 backdrop-blur-md">
-          <div className={`${showReport ? 'px-4' : 'mx-auto max-w-6xl px-5'} h-[54px] flex items-center gap-3`}>
+        {/* Header — minimal single line; in results it carries the search + toggle.
+            Transparent over the graph so the bar reads as part of the scene. */}
+        <header
+          className={`sticky top-0 z-30 ${
+            graphFull ? 'bg-transparent' : 'border-b border-line bg-ink/70 backdrop-blur-md'
+          }`}
+        >
+          <div className={`${showReport ? 'px-6' : 'mx-auto max-w-6xl px-5'} h-[56px] flex items-center gap-4 sm:gap-6`}>
             <button
               onClick={reset}
               className="font-display text-base tracking-tight flex items-center gap-2 text-cream shrink-0"
@@ -342,16 +347,20 @@ export default function Home() {
             )}
 
             {showReport && done && (
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-5 shrink-0">
                 <button
                   onClick={() => setView('graph')}
-                  className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                  className={`font-mono text-sm tracking-wide transition-colors ${
+                    view === 'graph' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
+                  }`}
                 >
                   ◈ Graph
                 </button>
                 <button
                   onClick={() => setView('table')}
-                  className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                  className={`font-mono text-sm tracking-wide transition-colors ${
+                    view === 'table' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
+                  }`}
                 >
                   ▦ Table
                 </button>
@@ -431,7 +440,7 @@ export default function Home() {
           {showReport &&
             report &&
             (!done ? (
-              <div className="flex-1 flex">
+              <div className="flex-1 relative">
                 <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
               </div>
             ) : view === 'graph' ? (

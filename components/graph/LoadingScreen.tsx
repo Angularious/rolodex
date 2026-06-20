@@ -14,9 +14,9 @@ function StatusDot({ status }: { status: StepStatus }) {
 // Full-area space "mission control" loader shown while a report streams in.
 export default function LoadingScreen({ steps, domain }: { steps: TraceStep[]; domain: string }) {
   return (
-    <div className="graph-blue relative h-full min-h-[520px] w-full overflow-hidden bg-[#04050a] grid place-items-center">
-      <div className="flex flex-col items-center gap-8 px-6">
-        {/* orbiting system */}
+    <div className="graph-blue absolute inset-0 overflow-hidden bg-[#04050a] grid place-items-center">
+      <div className="flex flex-col items-center gap-7 px-6 w-full">
+        {/* orbiting system — centered */}
         <div className="gspace-loader" aria-hidden>
           <span className="gspace-core" />
           <span className="gspace-orbit gspace-orbit-1">
@@ -37,30 +37,30 @@ export default function LoadingScreen({ steps, domain }: { steps: TraceStep[]; d
           <div className="font-display text-2xl text-cream mt-1">{domain}</div>
         </div>
 
-        {/* live step checklist */}
-        <ol className="w-full max-w-md space-y-2">
+        {/* minimal horizontal steps — no boxes */}
+        <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-3 max-w-3xl">
           {steps.map((s, i) => (
-            <li
+            <div
               key={s.key}
-              className="gspace-reveal flex items-center gap-3 border border-line bg-ink-2/50 px-3 py-2"
+              className="gspace-reveal flex items-center gap-2"
               style={{ animationDelay: `${i * 0.45}s` }}
             >
               <StatusDot status={s.status} />
-              <div className="min-w-0 flex-1">
-                <div className="font-mono text-[0.78rem] text-cream truncate">{s.label}</div>
-                <div className="font-mono text-[0.62rem] text-muted truncate">{s.hint}</div>
-              </div>
+              <span
+                className={`font-mono text-[0.8rem] ${
+                  s.status === 'running' ? 'text-cream' : s.status === 'done' ? 'text-cream-dim' : 'text-muted'
+                }`}
+              >
+                {s.label}
+              </span>
               {s.status === 'done' && s.count != null && (
-                <span className="font-mono text-[0.66rem] text-accent-soft shrink-0">
+                <span className="font-mono text-[0.72rem] text-accent-soft">
                   {s.count.toLocaleString()} {s.countLabel}
                 </span>
               )}
-              {s.status === 'failed' && (
-                <span className="font-mono text-[0.62rem] text-red-400 shrink-0">failed</span>
-              )}
-            </li>
+            </div>
           ))}
-        </ol>
+        </div>
 
         <div className="font-mono text-[0.62rem] text-muted/70 tracking-wider gspace-blink">
           Coordinating data operations…
