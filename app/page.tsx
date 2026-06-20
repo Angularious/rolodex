@@ -19,8 +19,12 @@ import EmployeesTab from '@/components/EmployeesTab';
 import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
-import OrchestrationTrace, { type TraceStep } from '@/components/OrchestrationTrace';
-import CompanyGraph from '@/components/graph/CompanyGraph';
+import dynamic from 'next/dynamic';
+import { type TraceStep } from '@/components/OrchestrationTrace';
+import LoadingScreen from '@/components/graph/LoadingScreen';
+
+// WebGL scene — client-only (three.js needs the browser).
+const SpaceGraph = dynamic(() => import('@/components/graph/SpaceGraph'), { ssr: false });
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
@@ -379,56 +383,49 @@ export default function Home() {
           {/* Report */}
           {showReport && report && (
             <section>
-              {report.resolvedFrom && (
-                <div className="text-white/90 text-sm mb-1">
-                  Resolved <b>{report.resolvedFrom}</b> → <b>{report.domain}</b>
-                </div>
-              )}
-              {done && (
-                <div className="text-white/80 text-xs mb-2">
-                  Live report · ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
-                </div>
-              )}
-
-              <OrchestrationTrace
-                steps={buildTrace(report, done)}
-                done={done}
-                durationMs={report.durationMs}
-              />
-
-              <div className="flex items-center gap-1 mb-3">
-                <button
-                  onClick={() => setView('graph')}
-                  className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
-                >
-                  ◈ Graph View
-                </button>
-                <button
-                  onClick={() => setView('table')}
-                  className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
-                >
-                  ▦ Table View
-                </button>
-              </div>
-
-              {view === 'graph' ? (
-                <CompanyGraph
-                  data={{
-                    domain: report.domain,
-                    company: report.company,
-                    competitors: report.competitors,
-                    competitorsLoading: report.competitorsLoading,
-                    decisionMakers: report.decisionMakers,
-                    decisionMakersLoading: report.decisionMakersLoading,
-                    workforce: report.workforce,
-                    workforceLoading: report.workforceLoading,
-                  }}
-                  onReveal={revealContact}
-                  onSearchCompany={(d) => requestSearch(d)}
-                  onSwitchToTable={() => setView('table')}
-                />
+              {!done ? (
+                <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
               ) : (
                 <>
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setView('graph')}
+                        className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                      >
+                        ◈ Graph View
+                      </button>
+                      <button
+                        onClick={() => setView('table')}
+                        className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                      >
+                        ▦ Table View
+                      </button>
+                    </div>
+                    <span className="font-mono text-[0.66rem] text-muted">
+                      ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
+                      {report.resolvedFrom ? ` · ${report.resolvedFrom} → ${report.domain}` : ''}
+                    </span>
+                  </div>
+
+                  {view === 'graph' ? (
+                    <SpaceGraph
+                      data={{
+                        domain: report.domain,
+                        company: report.company,
+                        competitors: report.competitors,
+                        competitorsLoading: report.competitorsLoading,
+                        decisionMakers: report.decisionMakers,
+                        decisionMakersLoading: report.decisionMakersLoading,
+                        workforce: report.workforce,
+                        workforceLoading: report.workforceLoading,
+                      }}
+                      onReveal={revealContact}
+                      onSearchCompany={(d) => requestSearch(d)}
+                      onSwitchToTable={() => setView('table')}
+                    />
+                  ) : (
+                    <>
               {report.company ? (
                 <CompanyCard company={report.company} />
               ) : report.companyError ? (
@@ -492,6 +489,8 @@ export default function Home() {
                   />
                 )}
               </div>
+                  </>
+                  )}
                 </>
               )}
             </section>

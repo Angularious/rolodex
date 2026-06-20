@@ -52,14 +52,20 @@ the user's keys; it's already gitignore'd so it never gets committed.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
   Employees and Decision-makers tabs call `/api/reveal` per row.
 - **Graph View** (`components/graph/`) is the **default** results view (Table View =
-  the tabs, toggled). React Flow node-link graph in a Palantir-Foundry style (flat,
-  sharp nodes, blue accent scoped via `.graph-blue`, blue `FieldBackground`). It's a
-  client view on `/` fed by the **live streaming `Report`** (no new route/fetch — that
-  preserves cost discipline): center company node first, then competitor / decision-
-  maker / department / single tech-stack nodes animate in per section (pulsing
-  "pending" nodes while a section loads). `layout.ts` builds nodes/edges (radial,
-  per-category caps + "+N more"), `nodes.tsx` = custom node components, `GraphPanel`
-  = click-to-inspect side panel (decision-maker **Enrich** reuses `revealContact`).
+  the tabs, toggled). It's a **3D WebGL solar-system** (Three.js via
+  `@react-three/fiber` + `drei`): company = glowing **sun**, each category an orbital
+  **ring** of planets (decision-makers / departments / competitors), a single **Tech
+  Stack** planet, and **Funding** as a clickable box. Planets sized by hierarchy
+  (seniority / headcount), colored per category; labels show on hover/selection;
+  OrbitControls for orbit/zoom. Blue accent scoped via `.graph-blue`; space styles +
+  loader live in `globals.css` (`.gspace-*`).
+  - `SpaceGraph.tsx` = the R3F scene (lazy-loaded via `next/dynamic` `ssr:false` — three
+    needs `window`). `types.ts` = shared `GraphData`/`GNodeData`. `GraphPanel.tsx` =
+    click-to-inspect side panel (decision-maker **Enrich** reuses `revealContact`;
+    funding panel lists rounds). `LoadingScreen.tsx` = the dedicated mission-control
+    loader shown while a report streams (`!done`), built from `buildTrace` steps.
+  - Fed by the **in-memory `Report`** (no new route/fetch — preserves cost discipline).
+    Results top = compact search + Graph/Table toggle; loading screen → graph on `done`.
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section

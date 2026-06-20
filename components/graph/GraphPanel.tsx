@@ -1,6 +1,6 @@
 'use client';
 
-import type { GNodeData } from './layout';
+import type { GNodeData } from './types';
 import type { DecisionMaker } from '@/lib/types';
 
 export interface RevealState {
@@ -125,6 +125,29 @@ export default function GraphPanel({
                 {t}
               </span>
             ))}
+          </div>
+        )}
+
+        {data.kind === 'funding' && data.company && (
+          <div className="mt-2">
+            <Row label="Total raised" value={data.company.fundingTotal} />
+            <Row label="Stage" value={data.company.fundingStage} />
+            <div className="mt-3 space-y-2">
+              {(data.company.fundingRounds ?? []).map((r, i) => (
+                <div key={i} className="border border-line px-2 py-1.5">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-mono text-[0.72rem] text-cream">{r.type ?? 'Round'}</span>
+                    <span className="font-mono text-[0.72rem] text-accent-soft">{r.amount ?? '—'}</span>
+                  </div>
+                  <div className="font-mono text-[0.62rem] text-muted">
+                    {[r.date, r.investors].filter(Boolean).join(' · ') || '—'}
+                  </div>
+                </div>
+              ))}
+              {!(data.company.fundingRounds ?? []).length && (
+                <div className="font-mono text-[0.7rem] text-muted">No round detail available.</div>
+              )}
+            </div>
           </div>
         )}
 
