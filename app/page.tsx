@@ -422,7 +422,6 @@ export default function Home() {
                     totalAvailable={report.employeesTotal}
                     loading={report.employeesLoading}
                     forcedDepartment={forcedDept}
-                    domain={report.domain}
                     onReveal={revealContact}
                     onConnectClick={connectOrthogonal}
                     error={report.employeesError}
@@ -434,7 +433,6 @@ export default function Home() {
                     decisionMakers={report.decisionMakers}
                     loading={report.decisionMakersLoading}
                     onReveal={revealContact}
-                    domain={report.domain}
                     error={report.decisionMakersError}
                     onRetry={() => requestSearch(report.domain)}
                   />
