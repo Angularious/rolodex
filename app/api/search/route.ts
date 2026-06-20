@@ -15,6 +15,7 @@ import {
   mapPeople,
 } from '@/lib/companyenrich';
 import { decisionMakers, mapDecisionMakers } from '@/lib/contactout';
+import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
 import { similar, mapCompetitors } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
@@ -42,6 +43,7 @@ const PRICE = {
   perPerson: 0.0245, // company-enrich /people/search (per result)
   competitors: 0.01, // tomba /v1/similar
   decisionMakers: 0.05, // contactout /people/decision-makers (reveal off)
+  aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
 };
 
 // Worst-case cost of one search, reserved against the hard cap up front and
@@ -51,7 +53,8 @@ const ESTIMATE_USD =
   PRICE.workforce +
   PRICE.perPerson * PAGE_SIZE +
   PRICE.competitors +
-  PRICE.decisionMakers;
+  PRICE.decisionMakers +
+  PRICE.aviatoFunding; // funding fallback may fire when CE has no round detail
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -154,30 +157,57 @@ export async function POST(req: NextRequest) {
       // to its embedded company_id if the by-domain profile lookup fails.
       const wfPromise = workforce(domain);
 
-      const companyJob = preResolvedCompany
-        ? Promise.resolve().then(() => write({ type: 'company', data: preResolvedCompany }))
-        : enrichByDomain(domain)
-            .then((raw) => {
-              spentUsd += PRICE.enrich;
-              write({ type: 'company', data: mapCompany(raw, domain) });
-            })
-            .catch(async (err) => {
-              noteQuota(err);
-              // Fallback: derive the profile from the workforce company_id.
-              try {
-                const wf = await wfPromise;
-                const id = (wf as { company_id?: string | null })?.company_id;
-                if (id) {
-                  const raw = await profileById(id);
-                  spentUsd += PRICE.enrich;
-                  write({ type: 'company', data: mapCompany(raw, domain) });
-                  return;
-                }
-              } catch (fallbackErr) {
-                noteQuota(fallbackErr);
+      // Funding fallback: when Company Enrich returns no round-level detail, pull
+      // structured rounds from Aviato ($0.08) and merge them into the profile.
+      // Fires only on thin funding, so most searches stay at the base cost.
+      const augmentFunding = async (company: Company): Promise<Company> => {
+        if (company.fundingRounds && company.fundingRounds.length) return company;
+        try {
+          const f = mapAviatoFunding(await aviatoFunding(domain));
+          if (f && f.fundingRounds.length) {
+            spentUsd += PRICE.aviatoFunding;
+            return {
+              ...company,
+              fundingTotal: company.fundingTotal ?? f.fundingTotal,
+              fundingStage: company.fundingStage ?? f.fundingStage,
+              fundingRounds: f.fundingRounds,
+            };
+          }
+        } catch (err) {
+          noteQuota(err); // keep CE funding on failure
+        }
+        return company;
+      };
+
+      const companyJob = (async () => {
+        let company: Company | null = preResolvedCompany;
+        if (!company) {
+          try {
+            const raw = await enrichByDomain(domain);
+            spentUsd += PRICE.enrich;
+            company = mapCompany(raw, domain);
+          } catch (err) {
+            noteQuota(err);
+            // Fallback: derive the profile from the workforce company_id.
+            try {
+              const wf = await wfPromise;
+              const id = (wf as { company_id?: string | null })?.company_id;
+              if (id) {
+                const raw = await profileById(id);
+                spentUsd += PRICE.enrich;
+                company = mapCompany(raw, domain);
               }
-              write({ type: 'company', data: null, error: 'unavailable' });
-            });
+            } catch (fallbackErr) {
+              noteQuota(fallbackErr);
+            }
+          }
+        }
+        if (!company) {
+          write({ type: 'company', data: null, error: 'unavailable' });
+          return;
+        }
+        write({ type: 'company', data: await augmentFunding(company) });
+      })();
 
       const jobs: Promise<unknown>[] = [
         companyJob,
