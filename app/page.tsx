@@ -112,7 +112,15 @@ export default function Home() {
           return;
         }
 
+        let fatal = false;
         await readSearchStream(res, (msg) => {
+          if (msg.type === 'fatal') {
+            // Key limit hit mid-stream — abort the partial report to the error screen.
+            fatal = true;
+            setError({ error: msg.error });
+            setStatus('error');
+            return;
+          }
           setReport((prev) => {
             const r = prev ?? freshReport(value);
             switch (msg.type) {
@@ -149,8 +157,10 @@ export default function Home() {
             }
           });
         });
-        setStatus('ready');
-        setDone(true);
+        if (!fatal) {
+          setStatus('ready');
+          setDone(true);
+        }
       } catch {
         setError({ error: 'server_error' });
         setStatus('error');
@@ -360,6 +370,7 @@ export default function Home() {
                     decisionMakers={report.decisionMakers}
                     loading={report.decisionMakersLoading}
                     onReveal={revealContact}
+                    domain={report.domain}
                     error={report.decisionMakersError}
                     onRetry={() => requestSearch(report.domain)}
                   />

@@ -9,12 +9,27 @@ const TIMEOUT_MS = 9000;
 
 export class OrthogonalError extends Error {
   status: number;
-  constructor(message: string, status = 500) {
+  // True when the failure looks like an account quota / daily-spend limit on the
+  // Orthogonal key (vs. a transient/upstream error). Routes map this to the
+  // "DEMO AT CAPACITY" screen instead of a generic "service interrupted".
+  isQuota: boolean;
+  constructor(message: string, status = 500, isQuota = false) {
     super(message);
     this.name = 'OrthogonalError';
     this.status = status;
+    this.isQuota = isQuota;
   }
 }
+
+/** Did this error come from the Orthogonal key hitting its spend/usage limit? */
+export function isQuotaError(err: unknown): boolean {
+  return err instanceof OrthogonalError && err.isQuota;
+}
+
+// Best-effort signal that a `success:false` body is an account-limit rejection.
+// Conservative on purpose (no bare "limit"/"rate") to avoid mislabelling an
+// unrelated failure as capacity. Tighten once we observe a real limit response.
+const QUOTA_BODY_RE = /quota|budget|insufficient|exceeded|daily limit|spending limit|out of credit/i;
 
 /**
  * Call an Orthogonal-proxied endpoint.
@@ -81,14 +96,18 @@ export async function callOrthogonal<T = unknown>(
       continue;
     }
     if (!res.ok) {
+      // 402 Payment Required / 429 Too Many Requests at the Orthogonal level =
+      // account quota or spend limit on the key → surface as capacity.
+      const quota = res.status === 402 || res.status === 429;
       console.error(`[orthogonal] HTTP ${res.status} for ${api}${path}`);
-      throw new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status);
+      throw new OrthogonalError(`Orthogonal HTTP ${res.status} for ${api}${path}`, res.status, quota);
     }
 
     const json = (await res.json()) as { success?: boolean; data?: unknown; error?: unknown };
     if (json.success === false) {
       console.error(`[orthogonal] failed ${api}${path}:`, JSON.stringify(json.error));
-      throw new OrthogonalError(`Orthogonal call failed for ${api}${path}`, 502);
+      const quota = QUOTA_BODY_RE.test(JSON.stringify(json.error ?? ''));
+      throw new OrthogonalError(`Orthogonal call failed for ${api}${path}`, quota ? 503 : 502, quota);
     }
     return json.data as T;
   }

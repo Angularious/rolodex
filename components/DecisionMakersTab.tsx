@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { DecisionMaker } from '@/lib/types';
 import type { RevealFn } from './EmployeesTab';
+import { csvEscape } from '@/lib/format';
 import { useToast } from './Toast';
 import { Unavailable, SectionError } from './DepartmentsTab';
 
@@ -40,12 +41,14 @@ export default function DecisionMakersTab({
   decisionMakers,
   loading,
   onReveal,
+  domain,
   error,
   onRetry,
 }: {
   decisionMakers: DecisionMaker[] | null;
   loading: boolean;
   onReveal: RevealFn;
+  domain: string;
   error?: boolean;
   onRetry?: () => void;
 }) {
@@ -89,6 +92,34 @@ export default function DecisionMakersTab({
 
   const copy = (v: string) => navigator.clipboard.writeText(v).then(() => toast(`Copied ${v}`));
 
+  const exportCsv = () => {
+    const header = ['Name', 'Title', 'Job function', 'Seniority', 'Location', 'Email', 'Phone', 'LinkedIn'];
+    const rows = list.map((d) => {
+      const st = revealed[rowKey(d)];
+      return [
+        d.name,
+        d.title ?? '',
+        d.jobFunction ?? '',
+        d.seniority ?? '',
+        d.location ?? '',
+        st?.email ?? '',
+        st?.phone ?? '',
+        d.linkedin ?? '',
+      ]
+        .map((v) => csvEscape(v))
+        .join(',');
+    });
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${domain}-decision-makers.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('CSV exported');
+  };
+
   return (
     <div className="pop-in">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
@@ -96,16 +127,21 @@ export default function DecisionMakersTab({
           {decisionMakers.length} decision-makers. Badges show contact coverage before you spend.
           Reveal pulls a verified email/phone on demand.
         </p>
-        {functions.length > 0 && (
-          <select className="retro-select" value={func} onChange={(e) => setFunc(e.target.value)}>
-            <option value="">All functions</option>
-            {functions.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="flex items-center gap-2">
+          {functions.length > 0 && (
+            <select className="retro-select" value={func} onChange={(e) => setFunc(e.target.value)}>
+              <option value="">All functions</option>
+              {functions.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="retro-btn retro-btn-sm retro-btn-blue" onClick={exportCsv}>
+            ⤓ Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

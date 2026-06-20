@@ -42,7 +42,17 @@ the user's keys; it's already gitignore'd so it never gets committed.
 - Shared gating lives in `lib/guard.ts` (`originAllowed`, `isBotUserAgent`), reused
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
-  Employees and Decision-makers tabs call `/api/reveal` per row.
+  Employees and Decision-makers tabs call `/api/reveal` per row, and both export
+  the (filtered) list to CSV.
+- **Capacity vs. service-error:** an Orthogonal **key spend/usage limit** (HTTP 402/429,
+  or a `success:false` body matching the quota keywords in `lib/orthogonal.ts`) is
+  flagged `isQuota` on `OrthogonalError` and mapped to the **"DEMO AT CAPACITY"** screen
+  — not the generic "service interrupted". In `/api/search` (where calls run mid-stream)
+  this surfaces as a `{type:'fatal', error:'capacity'}` message that aborts the partial
+  report; the pre-stream name-resolve and `/api/reveal` return `503 capacity` directly.
+  Our **own** `DAILY_SPEND_CAP_USD` should be set below the Orthogonal-dashboard limit so
+  the app cap trips first; the quota path is the backstop. Quota detection is best-effort
+  (keyword-based) — tighten once a real limit response is observed.
 - `/api/track` logs orthogonal.com click-throughs. `/api/admin` + `/admin` page
   (gated by `ADMIN_PASSWORD`) show searches/spend/errors/conversions.
 
