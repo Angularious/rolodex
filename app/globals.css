@@ -379,3 +379,63 @@ body {
   background: var(--line-strong);
   border-radius: 999px;
 }
+
+/* ----------------------------------------------------- graph view (Foundry) */
+/* Blue accent, scoped to the graph so the rest of the app keeps its purple. */
+.graph-blue {
+  --accent: #3c6dff;
+  --accent-soft: #7aa8ff;
+  --accent-faint: #d8e3ff;
+  --accent-ring: rgba(60, 109, 255, 0.3);
+  --accent-sel: rgba(60, 109, 255, 0.32);
+}
+/* Transparent pane so the animated field shows through; flat, technical nodes. */
+.graph-canvas,
+.graph-canvas .react-flow__pane {
+  background: transparent;
+}
+.graph-canvas .react-flow__node {
+  font-family: var(--font-mono), monospace;
+}
+.gnode {
+  box-shadow: none;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.gnode-company {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.gnode:hover {
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.gnode-selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.gnode-spinner {
+  animation: gpulse 1s ease-in-out infinite;
+}
+.gnode-pending {
+  animation: gpulse 1.6s ease-in-out infinite;
+}
+@keyframes gpulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+/* Edges: thin spokes; animated dash-flow only while a node is hovered. */
+.graph-canvas .react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--accent-soft);
+  stroke-dasharray: 5;
+  animation: gdash 0.6s linear infinite;
+}
+@keyframes gdash {
+  to { stroke-dashoffset: -10; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gnode-spinner,
+  .gnode-pending,
+  .graph-canvas .react-flow__edge.animated .react-flow__edge-path {
+    animation: none;
+  }
+}

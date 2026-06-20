@@ -51,6 +51,15 @@ the user's keys; it's already gitignore'd so it never gets committed.
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
   Employees and Decision-makers tabs call `/api/reveal` per row.
+- **Graph View** (`components/graph/`) is the **default** results view (Table View =
+  the tabs, toggled). React Flow node-link graph in a Palantir-Foundry style (flat,
+  sharp nodes, blue accent scoped via `.graph-blue`, blue `FieldBackground`). It's a
+  client view on `/` fed by the **live streaming `Report`** (no new route/fetch — that
+  preserves cost discipline): center company node first, then competitor / decision-
+  maker / department / single tech-stack nodes animate in per section (pulsing
+  "pending" nodes while a section loads). `layout.ts` builds nodes/edges (radial,
+  per-category caps + "+N more"), `nodes.tsx` = custom node components, `GraphPanel`
+  = click-to-inspect side panel (decision-maker **Enrich** reuses `revealContact`).
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section

@@ -20,6 +20,7 @@ import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
 import OrchestrationTrace, { type TraceStep } from '@/components/OrchestrationTrace';
+import CompanyGraph from '@/components/graph/CompanyGraph';
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
@@ -141,6 +142,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>('employees');
   const [forcedDept, setForcedDept] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [view, setView] = useState<'graph' | 'table'>('graph');
 
   const inFlight = useRef(false);
 
@@ -286,8 +288,8 @@ export default function Home() {
 
   return (
     <ToastProvider>
-      {/* Animated dot-field background + legibility scrim */}
-      <FieldBackground />
+      {/* Animated dot-field background + legibility scrim (blue in graph view) */}
+      <FieldBackground theme={showReport && view === 'graph' ? 'blue' : 'purple'} />
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
@@ -394,6 +396,39 @@ export default function Home() {
                 durationMs={report.durationMs}
               />
 
+              <div className="flex items-center gap-1 mb-3">
+                <button
+                  onClick={() => setView('graph')}
+                  className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                >
+                  ◈ Graph View
+                </button>
+                <button
+                  onClick={() => setView('table')}
+                  className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                >
+                  ▦ Table View
+                </button>
+              </div>
+
+              {view === 'graph' ? (
+                <CompanyGraph
+                  data={{
+                    domain: report.domain,
+                    company: report.company,
+                    competitors: report.competitors,
+                    competitorsLoading: report.competitorsLoading,
+                    decisionMakers: report.decisionMakers,
+                    decisionMakersLoading: report.decisionMakersLoading,
+                    workforce: report.workforce,
+                    workforceLoading: report.workforceLoading,
+                  }}
+                  onReveal={revealContact}
+                  onSearchCompany={(d) => requestSearch(d)}
+                  onSwitchToTable={() => setView('table')}
+                />
+              ) : (
+                <>
               {report.company ? (
                 <CompanyCard company={report.company} />
               ) : report.companyError ? (
@@ -457,6 +492,8 @@ export default function Home() {
                   />
                 )}
               </div>
+                </>
+              )}
             </section>
           )}
         </main>
