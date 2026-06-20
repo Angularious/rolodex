@@ -39,7 +39,9 @@ the user's keys; it's already gitignore'd so it never gets committed.
   resolved profile has no round-level funding detail, the company job pulls
   structured rounds from **Aviato** (`/company/funding-rounds`, flat $0.08) and
   merges them in before emitting `company` (so the card waits only when funding is
-  thin). Aviato rounds are sanity-filtered in `lib/aviato.ts` (drop rows raising
+  thin). **Thin = no rounds OR rounds present but none carry a dollar amount** (CE
+  often returns round types/dates/investors with `amount: null` → "—", e.g.
+  scale.com). Aviato rounds are sanity-filtered in `lib/aviato.ts` (drop rows raising
   more than the company's max known valuation + acquisition/IPO-shaped rows — this
   is what kills Aviato mislabelling, e.g. the $20B Adobe deal as a "Venture Round").
 - **`/api/reveal`** is the on-demand email/phone route (per-click, not streamed).
@@ -78,9 +80,10 @@ people×10 $0.245 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
 line dominates. **`DM_PAGE_SIZE` is decoupled from `PAGE_SIZE`** — the
 decision-makers call is a flat $0.05 regardless of `per_page` (`reveal_info=false`),
 so it stays at 25 to surface more decision-makers for free; only the employee
-people-search scales with count. **Funding fallback (Aviato $0.08) fires only when
-CE returns no round detail**, so it adds to a search's cost (≈ $0.46) only on those;
-worst case is reserved up front in `ESTIMATE_USD`.
+people-search scales with count. **Funding fallback (Aviato $0.08) fires when
+CE rounds are missing dollar amounts** (no rounds, or rounds with null amounts), so
+it adds to a search's cost (≈ $0.46) only on those; worst case is reserved up front
+in `ESTIMATE_USD`.
 Reveals are billed on demand on top:
 - **Employee reveal** — CE `/people/email` hit = $0.12; CE miss → ContactOut
   fallback = $0.12 + $0.55 = **$0.67** (so a CE miss costs *more* than going
