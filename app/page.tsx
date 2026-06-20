@@ -24,11 +24,11 @@ import { type TraceStep } from '@/components/OrchestrationTrace';
 import LoadingScreen from '@/components/graph/LoadingScreen';
 import { SAMPLE } from '@/components/graph/sample';
 
-// WebGL scene — client-only (three.js needs the browser).
-const SpaceGraph = dynamic(() => import('@/components/graph/SpaceGraph'), {
+// HUD + WebGL scene — client-only (three.js needs the browser).
+const GraphHUD = dynamic(() => import('@/components/graph/GraphHUD'), {
   ssr: false,
   loading: () => (
-    <div className="h-full w-full grid place-items-center bg-[#020308] font-mono text-xs text-muted">
+    <div className="h-full w-full grid place-items-center bg-[#050608] font-mono text-xs text-muted">
       initializing graph…
     </div>
   ),
@@ -484,8 +484,8 @@ export default function Home() {
                 <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
               </div>
             ) : view === 'graph' ? (
-              <div className="flex-1 min-h-[70vh] bg-[#020308]">
-                <SpaceGraph
+              <div className="flex-1 min-h-[70vh] bg-[#050608]">
+                <GraphHUD
                   data={{
                     domain: report.domain,
                     company: report.company,

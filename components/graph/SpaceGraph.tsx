@@ -1,22 +1,27 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
 
-import type { GraphData, GNodeData } from './types';
-import GraphPanel, { type RevealState } from './GraphPanel';
-import type { DecisionMaker } from '@/lib/types';
-import type { RevealFn } from '@/components/EmployeesTab';
+import { CATEGORY_COLOR, type Category, type GraphData, type GNodeData } from './types';
 
-type Category = 'company' | 'people' | 'departments' | 'competitors' | 'tech' | 'funding' | 'more';
+export interface SpaceGraphHandle {
+  resetView: () => void;
+}
 
 interface GNode {
   id: string;
   category: Category;
-  label: string;
-  sub?: string;
-  size: number; // world-radius of the icosahedron
+  size: number;
   color: string;
   data: GNodeData;
   fx?: number;
@@ -30,167 +35,107 @@ interface GLink {
   dist: number;
 }
 
-const COLOR: Record<Category, string> = {
-  company: '#eaf1ff',
-  people: '#5b8cff',
-  departments: '#34d399',
-  competitors: '#c084fc',
-  tech: '#94a3b8',
-  funding: '#fbbf24',
-  more: '#64748b',
+// 3D centroid directions per category → each starburst sits at its own angle + depth.
+const CENTROID: Record<Exclude<Category, 'company'>, [number, number, number]> = {
+  people: [1, 0.4, 0.25],
+  departments: [-0.95, 0.15, 0.3],
+  competitors: [0.15, -0.55, -1],
+  funding: [-0.35, 1, -0.45],
+  tech: [0.65, -0.25, 0.95],
 };
-
-// Loose category "centroid" directions (unit-ish vectors) the clustering force
-// biases toward — gives 3D grouping without ring/angle math.
-const CENTROID: Partial<Record<Category, [number, number, number]>> = {
-  people: [1, 0.25, 0.1],
-  departments: [-0.7, -0.4, 0.55],
-  competitors: [0.15, -0.25, -1],
-  tech: [-0.85, 0.6, -0.15],
-  funding: [0.1, 1, 0.25],
-};
-const CENTROID_DIST = 70;
+const CENTROID_DIST = 95;
 
 const SENIORITY: Record<string, number> = {
   founder: 1, owner: 1, 'c-suite': 0.95, cxo: 0.95, partner: 0.8, vp: 0.78,
   director: 0.62, head: 0.58, principal: 0.5, senior: 0.46, manager: 0.46,
   mid: 0.38, entry: 0.32, junior: 0.32,
 };
-const CAP = { people: 18, competitors: 16, departments: 14 };
-
-// node world-radius from a 0..1 metric
-const radius = (metric: number) => 2.4 + metric * 4.2;
+const CAP = { people: 18, competitors: 16, departments: 14, funding: 8, tech: 12 };
+const r = (m: number) => 2.2 + m * 4;
 
 function buildGraph(d: GraphData): { nodes: GNode[]; links: GLink[] } {
   const nodes: GNode[] = [];
   const links: GLink[] = [];
-  const add = (n: GNode, dist: number) => {
-    nodes.push(n);
-    links.push({ source: 'company', target: n.id, color: n.color, dist });
-  };
 
   nodes.push({
     id: 'company',
     category: 'company',
-    label: d.company?.name ?? d.domain,
-    sub: d.domain,
     size: 8,
-    color: COLOR.company,
-    data: { kind: 'company', label: d.company?.name ?? d.domain, sub: d.domain, company: d.company ?? undefined },
+    color: CATEGORY_COLOR.company,
+    data: { kind: 'company', category: 'company', label: d.company?.name ?? d.domain, sub: d.domain, company: d.company ?? undefined },
     fx: 0,
     fy: 0,
-    fz: 0, // pin the anchor at the origin
+    fz: 0,
   });
 
-  // decision-makers (size by seniority; tighter links)
-  (d.decisionMakers ?? []).slice(0, CAP.people).forEach((p, i) => {
-    const m = SENIORITY[(p.seniority ?? '').toLowerCase()] ?? 0.4;
-    add(
-      {
-        id: `person-${i}`,
-        category: 'people',
-        label: p.name,
-        sub: p.title ?? p.headline ?? undefined,
-        size: radius(m),
-        color: COLOR.people,
-        data: { kind: 'person', label: p.name, sub: p.title ?? p.headline ?? undefined, person: p },
-      },
-      28 + (1 - m) * 22,
-    );
-  });
-  if ((d.decisionMakers?.length ?? 0) > CAP.people)
-    add(moreNode('people', d.decisionMakers!.length - CAP.people), 30);
+  // One starburst per category: company → hub (short), hub → satellites (medium).
+  const cluster = (category: Exclude<Category, 'company'>, items: GNode[]) => {
+    if (!items.length) return;
+    items.forEach((n) => nodes.push(n));
+    const hub = items[0].id;
+    links.push({ source: 'company', target: hub, color: items[0].color, dist: 52 });
+    for (let i = 1; i < items.length; i++)
+      links.push({ source: hub, target: items[i].id, color: items[i].color, dist: 16 });
+  };
 
-  // departments (size by headcount, log-scaled)
+  // people (by seniority desc → hub = most senior)
+  const people = (d.decisionMakers ?? [])
+    .slice(0, CAP.people)
+    .map((p, i): GNode => {
+      const m = SENIORITY[(p.seniority ?? '').toLowerCase()] ?? 0.4;
+      return {
+        id: `person-${i}`, category: 'people', size: r(m), color: CATEGORY_COLOR.people,
+        data: { kind: 'person', category: 'people', label: p.name, sub: p.title ?? p.headline ?? undefined, person: p },
+      };
+    })
+    .sort((a, b) => b.size - a.size);
+  cluster('people', people);
+
+  // departments (by headcount desc → hub = largest)
   const depts = d.workforce?.departments ?? [];
   const maxCount = Math.max(1, ...depts.map((x) => x.count));
-  depts.slice(0, CAP.departments).forEach((dep, i) => {
-    const m = Math.log(dep.count + 1) / Math.log(maxCount + 1);
-    add(
-      {
-        id: `department-${i}`,
-        category: 'departments',
-        label: dep.name,
-        sub: `${dep.count.toLocaleString()} people`,
-        size: radius(m),
-        color: COLOR.departments,
-        data: { kind: 'department', label: dep.name, sub: `${dep.count.toLocaleString()} people`, department: dep },
-      },
-      34 + (1 - m) * 24,
-    );
-  });
-  if (depts.length > CAP.departments) add(moreNode('departments', depts.length - CAP.departments), 38);
+  const department = [...depts]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, CAP.departments)
+    .map((dep, i): GNode => ({
+      id: `dept-${i}`, category: 'departments', size: r(Math.log(dep.count + 1) / Math.log(maxCount + 1)),
+      color: CATEGORY_COLOR.departments,
+      data: { kind: 'department', category: 'departments', label: dep.name, sub: `${dep.count.toLocaleString()} people`, department: dep },
+    }));
+  cluster('departments', department);
 
-  // competitors (uniform mid-size; longer links so they sit further out)
-  (d.competitors ?? []).slice(0, CAP.competitors).forEach((c, i) => {
-    add(
-      {
-        id: `competitor-${i}`,
-        category: 'competitors',
-        label: c.name || c.domain,
-        sub: c.domain,
-        size: radius(0.45),
-        color: COLOR.competitors,
-        data: { kind: 'competitor', label: c.name || c.domain, sub: c.domain, competitor: c },
-      },
-      82,
-    );
-  });
-  if ((d.competitors?.length ?? 0) > CAP.competitors)
-    add(moreNode('competitors', d.competitors!.length - CAP.competitors), 82);
+  // competitors
+  const competitor = (d.competitors ?? []).slice(0, CAP.competitors).map((c, i): GNode => ({
+    id: `comp-${i}`, category: 'competitors', size: 3.1, color: CATEGORY_COLOR.competitors,
+    data: { kind: 'competitor', category: 'competitors', label: c.name || c.domain, sub: c.domain, competitor: c },
+  }));
+  cluster('competitors', competitor);
 
-  // tech (single)
-  if (d.company?.tech?.length)
-    add(
-      {
-        id: 'tech',
-        category: 'tech',
-        label: 'Tech Stack',
-        sub: `${d.company.tech.length} tools`,
-        size: radius(0.7),
-        color: COLOR.tech,
-        data: { kind: 'tech', label: 'Tech Stack', sub: `${d.company.tech.length} tools`, tech: d.company.tech },
-      },
-      40,
-    );
+  // funding rounds (magenta) — real time-ordered events
+  const funding = (d.company?.fundingRounds ?? []).slice(0, CAP.funding).map((rd, i): GNode => ({
+    id: `fund-${i}`, category: 'funding', size: 3.4, color: CATEGORY_COLOR.funding,
+    data: { kind: 'fundingRound', category: 'funding', label: rd.type ?? 'Round', sub: rd.amount ?? undefined, round: rd },
+  }));
+  cluster('funding', funding);
 
-  // funding (gold)
-  if (d.company?.fundingTotal || d.company?.fundingRounds?.length)
-    add(
-      {
-        id: 'funding',
-        category: 'funding',
-        label: 'Funding',
-        sub: d.company.fundingTotal ?? undefined,
-        size: radius(0.85),
-        color: COLOR.funding,
-        data: { kind: 'funding', label: 'Funding', sub: d.company.fundingTotal ?? undefined, company: d.company },
-      },
-      30,
-    );
+  // tech stack (seafoam) — individual tools
+  const tech = (d.company?.tech ?? []).slice(0, CAP.tech).map((t, i): GNode => ({
+    id: `tech-${i}`, category: 'tech', size: 2.4, color: CATEGORY_COLOR.tech,
+    data: { kind: 'tech', category: 'tech', label: t, tech: t },
+  }));
+  cluster('tech', tech);
 
   return { nodes, links };
 }
 
-function moreNode(category: 'people' | 'competitors' | 'departments', count: number): GNode {
-  return {
-    id: `${category}-more`,
-    category: 'more',
-    label: `+${count} more`,
-    size: radius(0.3),
-    color: COLOR.more,
-    data: { kind: 'more', label: `+${count} more`, more: { category, count } },
-  };
-}
-
-// --- custom d3-force-3d clustering force: bias same-category nodes toward a centroid ---
+// --- custom d3-force-3d clustering force (tight starbursts at varied depth) ---
 function clusterForce() {
   let nodes: GNode[] = [];
-  const STRENGTH = 0.09;
+  const STRENGTH = 0.14;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const force = (alpha: number) => {
     for (const n of nodes as any[]) {
-      const c = CENTROID[(n as GNode).category as Category];
+      const c = CENTROID[(n as GNode).category as Exclude<Category, 'company'>];
       if (!c) continue;
       n.vx += (c[0] * CENTROID_DIST - n.x) * STRENGTH * alpha;
       n.vy += (c[1] * CENTROID_DIST - n.y) * STRENGTH * alpha;
@@ -198,76 +143,80 @@ function clusterForce() {
     }
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  force.initialize = (n: any[]) => {
-    nodes = n;
-  };
+  force.initialize = (n: any[]) => (nodes = n);
   return force;
 }
 
+// soft glowing glass sphere + additive halo (bloom does the rest)
 function nodeObject(node: GNode): THREE.Object3D {
-  const group = new THREE.Group();
-  const detail = node.category === 'company' ? 2 : node.size > 4 ? 1 : 0;
-  const geo = new THREE.IcosahedronGeometry(node.size, detail);
-  const mesh = new THREE.Mesh(
-    geo,
-    new THREE.MeshStandardMaterial({
-      color: new THREE.Color(node.color).multiplyScalar(0.35),
-      emissive: new THREE.Color(node.color),
-      emissiveIntensity: node.category === 'company' ? 1.1 : 0.75,
-      roughness: 0.3,
-      metalness: 0.1,
-    }),
+  const g = new THREE.Group();
+  g.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(node.size, 22, 22),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(node.color).multiplyScalar(0.45),
+        emissive: new THREE.Color(node.color),
+        emissiveIntensity: node.category === 'company' ? 1.4 : 0.9,
+        roughness: 0.35,
+        metalness: 0.0,
+      }),
+    ),
   );
-  const wire = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({ color: node.color, wireframe: true, transparent: true, opacity: 0.22 }),
+  g.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(node.size * 1.7, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color: node.color,
+        transparent: true,
+        opacity: node.category === 'company' ? 0.22 : 0.12,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    ),
   );
-  wire.scale.setScalar(1.03);
-  group.add(mesh, wire);
-  return group;
+  return g;
 }
 
-// Stable accessor fns (module scope) so they don't churn ForceGraph each render.
-const nodeLabelFn = (n: GNode) =>
-  `<span style="font-family:monospace;font-size:11px">${n.label}</span>`;
 const linkColorFn = (l: GLink) => l.color;
-
-function keyOf(p: DecisionMaker) {
-  return p.linkedin || p.name;
+const nodeLabelFn = (n: GNode) => {
+  const key = n.data.sub ? `<div style="color:#8aa">${escapeHtml(n.data.sub)}</div>` : '';
+  return `<div style="font-family:var(--font-mono),monospace;font-size:11px;letter-spacing:.04em;background:rgba(6,10,16,.92);border:1px solid rgba(120,180,255,.3);padding:5px 9px;white-space:nowrap"><div style="color:#eaf1ff">${escapeHtml(n.data.label)}</div>${key}</div>`;
+};
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-export default function SpaceGraph({
-  data,
-  onReveal,
-  onSearchCompany,
-  onSwitchToTable,
-}: {
-  data: GraphData;
-  onReveal: RevealFn;
-  onSearchCompany: (domain: string) => void;
-  onSwitchToTable: () => void;
-}) {
-  // Depend on the underlying fields, NOT the `data` object (which page.tsx
-  // recreates every render). Otherwise the graph gets a new identity on every
-  // render → ForceGraph3D re-ingests + re-heats the sim → the flashing.
+function SpaceGraphInner(
+  {
+    data,
+    onSelect,
+    hidden,
+  }: {
+    data: GraphData;
+    onSelect: (d: GNodeData | null) => void;
+    hidden: Set<Category>;
+  },
+  ref: React.Ref<SpaceGraphHandle>,
+) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fg = useRef<any>(null);
+  const fitted = useRef(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [size, setSize] = useState(() => ({ w: 0, h: 0 }));
+
   const graph = useMemo(
     () => buildGraph(data),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.domain, data.company, data.competitors, data.decisionMakers, data.workforce],
   );
-  const wrapRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fg = useRef<any>(null);
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fitted = useRef(false);
-  // Seed a non-zero size immediately (client-only here) so the canvas always
-  // mounts; the ResizeObserver refines it to the container.
-  const [size, setSize] = useState(() => ({
-    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
-    h: typeof window !== 'undefined' ? Math.max(520, window.innerHeight - 56) : 720,
+
+  useImperativeHandle(ref, () => ({
+    resetView: () => {
+      fitted.current = false;
+      fg.current?.zoomToFit(700, 80);
+    },
   }));
-  const [selected, setSelected] = useState<GNodeData | null>(null);
-  const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
 
   // size to container
   useEffect(() => {
@@ -276,8 +225,6 @@ export default function SpaceGraph({
     const apply = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      // Only update on a real change — redundant setState was thrashing the
-      // canvas (resize flash / enlarge-then-back).
       setSize((s) => (Math.abs(s.w - w) < 1 && Math.abs(s.h - h) < 1 ? s : { w, h }));
     };
     const ro = new ResizeObserver(apply);
@@ -286,55 +233,45 @@ export default function SpaceGraph({
     return () => ro.disconnect();
   }, []);
 
-  // forces, bloom, starfield, idle auto-rotate — once the instance exists
+  // forces, bloom, radar floor, idle auto-rotate
   useEffect(() => {
     const inst = fg.current;
     if (!inst) return;
-    fitted.current = false; // a fresh graph should fit once
+    fitted.current = false;
 
-    // forces
-    inst.d3Force('charge')?.strength(-140);
-    inst.d3Force('link')?.distance((l: GLink) => l.dist).strength(0.7);
+    inst.d3Force('charge')?.strength(-90);
+    inst.d3Force('link')?.distance((l: GLink) => l.dist).strength(0.8);
     inst.d3Force('cluster', clusterForce());
 
-    // bloom — the "glowing data construct" look. Loaded lazily + guarded so a
-    // failed example-module import can never blank the whole graph.
     (async () => {
       try {
         const { UnrealBloomPass } = await import('three/examples/jsm/postprocessing/UnrealBloomPass.js');
-        const bloom = new UnrealBloomPass(new THREE.Vector2(size.w || 1200, size.h || 800), 1.3, 0.65, 0.08);
+        const bloom = new UnrealBloomPass(new THREE.Vector2(size.w || 1200, size.h || 800), 1.6, 0.75, 0.05);
         inst.postProcessingComposer().addPass(bloom);
       } catch {
-        /* bloom unavailable — graph still renders without it */
+        /* graph still renders without bloom */
       }
     })();
 
-    // far starfield (not part of the simulation; fixed-size points)
-    const N = 2200;
-    const pos = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      const r = 700 + Math.random() * 800;
-      const t = Math.random() * Math.PI * 2;
-      const p = Math.acos(2 * Math.random() - 1);
-      pos[i * 3] = r * Math.sin(p) * Math.cos(t);
-      pos[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
-      pos[i * 3 + 2] = r * Math.cos(p);
+    // faint concentric "radar" rings on the ground plane (decorative depth cue)
+    const radar = new THREE.Group();
+    for (const rad of [70, 120, 175, 235]) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(rad - 0.4, rad + 0.4, 96),
+        new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.08, side: THREE.DoubleSide }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = -45;
+      radar.add(ring);
     }
-    const sGeo = new THREE.BufferGeometry();
-    sGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const stars = new THREE.Points(
-      sGeo,
-      new THREE.PointsMaterial({ color: 0x8fb8ff, size: 1.5, sizeAttenuation: false, transparent: true, opacity: 0.7 }),
-    );
-    inst.scene().add(stars);
+    inst.scene().add(radar);
 
-    // idle auto-rotate via OrbitControls; pause while the user interacts
     const controls = inst.controls();
     if (controls) {
-      controls.minDistance = 60; // cap zoom-in
-      controls.maxDistance = 520; // cap zoom-out so the graph never shrinks to a dot
+      controls.minDistance = 60;
+      controls.maxDistance = 600;
       controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.45;
+      controls.autoRotateSpeed = 0.4;
       const pause = () => {
         controls.autoRotate = false;
         if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -344,79 +281,61 @@ export default function SpaceGraph({
     }
 
     return () => {
-      inst.scene()?.remove(stars);
-      sGeo.dispose();
+      inst.scene()?.remove(radar);
       if (idleTimer.current) clearTimeout(idleTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph]);
 
-  const reveal = useCallback(
-    async (p: DecisionMaker) => {
-      const k = keyOf(p);
-      setRevealMap((m) => (m[k]?.loading || m[k]?.tried ? m : { ...m, [k]: { loading: true, tried: false, email: null, phone: null } }));
-      try {
-        const r = await onReveal({ linkedin: p.linkedin });
-        setRevealMap((m) => ({ ...m, [k]: { loading: false, tried: true, email: r.email, phone: r.phone ?? null } }));
-      } catch {
-        setRevealMap((m) => ({ ...m, [k]: { loading: false, tried: true, email: null, phone: null } }));
-      }
-    },
-    [onReveal],
-  );
-
-  // Just open the inspector — no camera move (the fly-to read as a jarring
-  // zoom-in/out reposition). The view stays exactly where the user left it.
-  const onNodeClick = useCallback((node: GNode) => setSelected(node.data), []);
-
-  // Fit the view exactly once per graph — re-fitting on later engine stops/
-  // resizes is what caused the "enlarge then back" reframe.
   const handleEngineStop = useCallback(() => {
     if (fitted.current) return;
     fitted.current = true;
-    fg.current?.zoomToFit(700, 90);
+    fg.current?.zoomToFit(700, 80);
   }, []);
 
+  const onNodeClick = useCallback((node: GNode) => onSelect(node.data), [onSelect]);
+
+  // legend visibility (no sim restart — just toggles object visibility)
+  const nodeVisible = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => (n: any) => !hidden.has(n.category),
+    [hidden],
+  );
+  const linkVisible = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => (l: any) => !hidden.has(l.source?.category) && !hidden.has(l.target?.category),
+    [hidden],
+  );
+
   return (
-    <div ref={wrapRef} className="graph-blue relative h-full w-full bg-[#020308]">
+    <div ref={wrapRef} className="absolute inset-0 overflow-hidden">
       {size.w > 0 && (
         <ForceGraph3D
           ref={fg}
           width={size.w}
           height={size.h}
           graphData={graph}
-          backgroundColor="#020308"
+          backgroundColor="#050608"
           showNavInfo={false}
           controlType="orbit"
           nodeThreeObject={nodeObject as never}
           nodeLabel={nodeLabelFn as never}
+          nodeVisibility={nodeVisible as never}
+          linkVisibility={linkVisible as never}
           linkColor={linkColorFn as never}
-          linkOpacity={0.3}
-          linkWidth={0.4}
-          linkDirectionalParticles={2}
-          linkDirectionalParticleWidth={1.1}
-          linkDirectionalParticleSpeed={0.006}
-          linkDirectionalParticleColor={linkColorFn as never}
+          linkOpacity={0.34}
+          linkWidth={0.5}
           enableNodeDrag={false}
           warmupTicks={40}
-          cooldownTicks={120}
+          cooldownTicks={140}
           onEngineStop={handleEngineStop}
           onNodeClick={onNodeClick as never}
+          onBackgroundClick={() => onSelect(null)}
         />
       )}
-
-      <div className="absolute bottom-4 right-4 z-10 font-mono text-[0.6rem] text-muted/70 pointer-events-none">
-        drag to orbit · scroll to zoom · click a node
-      </div>
-
-      <GraphPanel
-        data={selected}
-        onClose={() => setSelected(null)}
-        reveal={reveal}
-        revealState={(p) => revealMap[keyOf(p)]}
-        onSearchCompany={onSearchCompany}
-        onSwitchToTable={onSwitchToTable}
-      />
     </div>
   );
 }
+
+const SpaceGraph = forwardRef(SpaceGraphInner);
+export default SpaceGraph;

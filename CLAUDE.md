@@ -56,25 +56,33 @@ the user's keys; it's already gitignore'd so it never gets committed.
   (`react-force-graph-3d`, the React binding of `3d-force-graph`; wraps three +
   three-forcegraph + d3-force-3d), Palantir-Gotham-styled: **no ring/orbit math** —
   positions come from the force sim only.
-  - `SpaceGraph.tsx` = the force graph (lazy-loaded via `next/dynamic` `ssr:false` —
-    three/webgl need `window`). Nodes = **icosahedrons** (low-poly) with emissive
-    material + a wireframe overlay; company = bright anchor pinned at origin
-    (`fx/fy/fz=0`). Sized by metric (seniority / log-headcount), colored per category
-    (people blue, depts green, competitors purple, tech slate, funding gold). A custom
-    **clustering force** (`d3Force('cluster', …)`) biases each category toward its own
-    centroid direction; charge repulsion prevents overlap; link distance is shorter for
-    senior people / big depts, longer for competitors. **UnrealBloomPass** post-process
-    for glow, **directional-particle** links, a far **starfield** (`THREE.Points`, fixed
-    size), camera **zoomToFit** on `onEngineStop`, and **idle auto-rotate** (OrbitControls,
-    pauses on interaction). Labels on hover only; click → fly-to + side panel.
-  - `types.ts` = shared `GraphData`/`GNodeData`. `GraphPanel.tsx` = click-to-inspect side
-    panel (decision-maker **Enrich** reuses `revealContact`; funding panel lists rounds).
-    `LoadingScreen.tsx` = dedicated loader shown while a report streams (`!done`), built
-    from `buildTrace` steps, **revealing each step card sequentially** (`.gspace-reveal`).
+  - `GraphHUD.tsx` = the **Palantir-Gotham HUD shell** (lazy-loaded via `next/dynamic`
+    `ssr:false`): left **legend** (category→color→count, click a row to toggle that
+    category's visibility) + icon **toolbar** (select active; **reset/fit-view** wired
+    to the graph's `resetView`), center viewport, right **entity inspector** (populates
+    on node click with real data; decision-maker **Enrich** reuses `revealContact`),
+    bottom **status strip** (LIVE · entities · relationships). Compass / focal crosshair
+    / mini-map are cosmetic overlays. On mobile the side panels collapse (right panel is
+    a drawer on select).
+  - `SpaceGraph.tsx` = the force graph inside the viewport (`react-force-graph-3d`,
+    `forwardRef` exposing `resetView`). Nodes = **soft glowing spheres** + additive halo
+    (bloom does the glow), sized by metric, colored per **5 categories** (people teal ·
+    departments blue · competitors purple · funding-rounds magenta · tech seafoam; company
+    = bright white, pinned at origin). Each category is a **starburst** (company→hub→
+    satellites) pulled to its own 3D **centroid** by a custom `d3Force('cluster', …)` →
+    volumetric clusters at varied depth. **UnrealBloomPass** glow (lazy-imported, guarded),
+    faint **radar rings** on the ground plane, idle **auto-rotate**, zoom capped
+    (`min/maxDistance`). Hover → styled tooltip; click → inspector (no camera move).
+    `graphData` + accessors are memoized/stable so the sim never re-heats (no flashing).
+  - `types.ts` = shared `GraphData`/`GNodeData` + the `Category` palette. `LoadingScreen.tsx`
+    = dedicated loader shown while a report streams (`!done`) — centered orbit + minimal
+    horizontal steps, **revealed sequentially** (`.gspace-reveal`). `sample.ts` powers
+    **`/?demo=1`** (free fixture preview — no `/api/search`, no credits; reveals stubbed).
   - Fed by the **in-memory `Report`** (no new route/fetch — preserves cost discipline).
-    Results chrome = a single minimal top bar (logo + compact search + Graph/Table toggle
-    + powered-by); the graph fills the rest of the viewport. Blue accent scoped via
-    `.graph-blue`; `.gspace-*` styles live in `globals.css`.
+    Page top bar = logo + compact search + Graph/Table toggle (text-only) + powered-by,
+    transparent over the graph. Blue accent scoped via `.graph-blue`; `.gspace-*` styles
+    in `globals.css`. **UI never names providers** — the inspector's Source row says
+    "Orthogonal", not the underlying API.
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section
