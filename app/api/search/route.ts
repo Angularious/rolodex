@@ -161,7 +161,11 @@ export async function POST(req: NextRequest) {
       // structured rounds from Aviato ($0.08) and merge them into the profile.
       // Fires only on thin funding, so most searches stay at the base cost.
       const augmentFunding = async (company: Company): Promise<Company> => {
-        if (company.fundingRounds && company.fundingRounds.length) return company;
+        // Fire only when CE funding is thin: no rounds at all, OR rounds present
+        // but none carry a dollar amount (common — e.g. scale.com returns round
+        // types/dates/investors with every amount null, rendering as "—").
+        const ceRounds = company.fundingRounds ?? [];
+        if (ceRounds.length && ceRounds.some((r) => r.amount)) return company;
         try {
           const f = mapAviatoFunding(await aviatoFunding(domain));
           if (f && f.fundingRounds.length) {
