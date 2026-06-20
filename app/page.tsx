@@ -19,6 +19,7 @@ import EmployeesTab from '@/components/EmployeesTab';
 import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
+import OrchestrationTrace, { type TraceStep } from '@/components/OrchestrationTrace';
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
@@ -71,6 +72,63 @@ function freshReport(inputEcho: string): Report {
     cost: 0,
     durationMs: 0,
   };
+}
+
+// Derive the live orchestration steps from the report's section state. Labels
+// are capability-based (never name a provider) and ordered as a logical pipeline
+// even though the calls actually fan out in parallel.
+function buildTrace(r: Report, done: boolean): TraceStep[] {
+  const status = (loading: boolean, error: boolean, present: boolean): TraceStep['status'] =>
+    error ? 'failed' : present ? 'done' : loading ? 'running' : 'empty';
+
+  return [
+    {
+      key: 'company',
+      label: 'Resolve company',
+      hint: 'Profile · funding · tech',
+      status: status(!done && !r.company && !r.companyError, r.companyError, !!r.company),
+    },
+    {
+      key: 'workforce',
+      label: 'Map workforce',
+      hint: 'Headcount by department',
+      status: status(r.workforceLoading, r.workforceError, !!r.workforce),
+      count: r.workforce?.departments.length ?? null,
+      countLabel: 'departments',
+    },
+    {
+      key: 'employees',
+      label: 'Find people',
+      hint: 'Employee roster',
+      status: status(r.employeesLoading, r.employeesError, r.employees.length > 0),
+      count: r.employeesTotal || r.employees.length || null,
+      countLabel: 'people',
+    },
+    {
+      key: 'decisionmakers',
+      label: 'Surface decision-makers',
+      hint: 'Senior contacts + coverage',
+      status: status(
+        r.decisionMakersLoading,
+        r.decisionMakersError,
+        !!r.decisionMakers && r.decisionMakers.length > 0,
+      ),
+      count: r.decisionMakers?.length ?? null,
+      countLabel: 'contacts',
+    },
+    {
+      key: 'competitors',
+      label: 'Scan competitors',
+      hint: 'Similar companies',
+      status: status(
+        r.competitorsLoading,
+        r.competitorsError,
+        !!r.competitors && r.competitors.length > 0,
+      ),
+      count: r.competitors?.length ?? null,
+      countLabel: 'companies',
+    },
+  ];
 }
 
 type Status = 'idle' | 'searching' | 'ready' | 'error';
@@ -329,6 +387,12 @@ export default function Home() {
                   Live report · ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
                 </div>
               )}
+
+              <OrchestrationTrace
+                steps={buildTrace(report, done)}
+                done={done}
+                durationMs={report.durationMs}
+              />
 
               {report.company ? (
                 <CompanyCard company={report.company} />
