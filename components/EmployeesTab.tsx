@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Employee, RevealResult } from '@/lib/types';
-import { countryName, csvEscape } from '@/lib/format';
+import { countryName } from '@/lib/format';
 import { useToast } from './Toast';
 import { SectionError } from './DepartmentsTab';
 
@@ -58,7 +58,6 @@ export default function EmployeesTab({
   totalAvailable,
   loading,
   forcedDepartment,
-  domain,
   onReveal,
   onConnectClick,
   error,
@@ -68,7 +67,6 @@ export default function EmployeesTab({
   totalAvailable: number;
   loading: boolean;
   forcedDepartment: string | null;
-  domain: string;
   onReveal: RevealFn;
   onConnectClick: () => void;
   error?: boolean;
@@ -155,32 +153,6 @@ export default function EmployeesTab({
     navigator.clipboard.writeText(emails).then(() => toast('Copied revealed emails'));
   };
 
-  const exportCsv = () => {
-    const header = ['Name', 'Title', 'Department', 'Seniority', 'Email', 'LinkedIn', 'Country'];
-    const rows = filtered.map((e) =>
-      [
-        e.fullName,
-        e.title ?? '',
-        e.department ?? '',
-        e.seniority ?? '',
-        revealed[rowKey(e)]?.email ?? '',
-        e.linkedin ?? '',
-        e.country ?? '',
-      ]
-        .map((v) => csvEscape(v))
-        .join(','),
-    );
-    const csv = [header.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${domain}-employees.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('CSV exported');
-  };
-
   if (loading && employees.length === 0) return <EmployeesSkeleton />;
   if (!loading && employees.length === 0) {
     if (error) return <SectionError onRetry={onRetry} />;
@@ -261,9 +233,6 @@ export default function EmployeesTab({
         <div className="flex gap-2">
           <button className="retro-btn retro-btn-sm" onClick={copyAllEmails}>
             ⎘ Copy revealed
-          </button>
-          <button className="retro-btn retro-btn-sm retro-btn-blue" onClick={exportCsv}>
-            ⤓ Export CSV
           </button>
         </div>
       </div>

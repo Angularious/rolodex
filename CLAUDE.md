@@ -42,8 +42,7 @@ the user's keys; it's already gitignore'd so it never gets committed.
 - Shared gating lives in `lib/guard.ts` (`originAllowed`, `isBotUserAgent`), reused
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
-  Employees and Decision-makers tabs call `/api/reveal` per row, and both export
-  the (filtered) list to CSV.
+  Employees and Decision-makers tabs call `/api/reveal` per row.
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section

@@ -39,8 +39,3 @@ export function flagEmoji(code: string): string {
   const cc = code.toUpperCase();
   return String.fromCodePoint(base + (cc.charCodeAt(0) - 65), base + (cc.charCodeAt(1) - 65));
 }
-
-export function csvEscape(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
