@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { readSearchStream } from '@/lib/stream';
 import { normalizeInput } from '@/lib/normalize';
 import type {
@@ -22,6 +22,7 @@ import CompetitorsTab from '@/components/CompetitorsTab';
 import dynamic from 'next/dynamic';
 import { type TraceStep } from '@/components/OrchestrationTrace';
 import LoadingScreen from '@/components/graph/LoadingScreen';
+import { SAMPLE } from '@/components/graph/sample';
 
 // WebGL scene — client-only (three.js needs the browser).
 const SpaceGraph = dynamic(() => import('@/components/graph/SpaceGraph'), {
@@ -156,6 +157,41 @@ export default function Home() {
   const [view, setView] = useState<'graph' | 'table'>('graph');
 
   const inFlight = useRef(false);
+  const demoRef = useRef(false);
+
+  // Free UI preview: `/?demo=1` loads a static fixture — no /api/search, no
+  // credits. Reveals are stubbed below so clicking Enrich is free too.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('demo')) return;
+    demoRef.current = true;
+    setInput(SAMPLE.domain);
+    setReport({
+      domain: SAMPLE.domain,
+      inputEcho: SAMPLE.domain,
+      resolvedFrom: null,
+      company: SAMPLE.company,
+      companyError: false,
+      workforce: SAMPLE.workforce,
+      workforceLoading: false,
+      workforceError: false,
+      competitors: SAMPLE.competitors,
+      competitorsLoading: false,
+      competitorsError: false,
+      employees: SAMPLE.employees,
+      employeesTotal: SAMPLE.employees.length,
+      employeesLoading: false,
+      employeesError: false,
+      decisionMakers: SAMPLE.decisionMakers,
+      decisionMakersLoading: false,
+      decisionMakersError: false,
+      cost: 0,
+      durationMs: 0,
+    });
+    setStatus('ready');
+    setDone(true);
+    setView('graph');
+  }, []);
 
   const doSearch = useCallback(
     async (value: string) => {
@@ -274,6 +310,10 @@ export default function Home() {
   // On-demand email/phone reveal for one person (tiered server-side).
   const revealContact = useCallback(
     async (payload: { ceId?: string | null; linkedin?: string | null }): Promise<RevealResult> => {
+      // Demo mode: never hit the paid reveal route.
+      if (demoRef.current) {
+        return { email: 'demo.contact@hyperion.demo', phone: '+1 555-0142', source: 'company-enrich' };
+      }
       const res = await fetch('/api/reveal', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
