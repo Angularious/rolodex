@@ -51,21 +51,30 @@ the user's keys; it's already gitignore'd so it never gets committed.
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
   Employees and Decision-makers tabs call `/api/reveal` per row.
-- **Graph View** (`components/graph/`) is the **default** results view (Table View =
-  the tabs, toggled). It's a **3D WebGL solar-system** (Three.js via
-  `@react-three/fiber` + `drei`): company = glowing **sun**, each category an orbital
-  **ring** of planets (decision-makers / departments / competitors), a single **Tech
-  Stack** planet, and **Funding** as a clickable box. Planets sized by hierarchy
-  (seniority / headcount), colored per category; labels show on hover/selection;
-  OrbitControls for orbit/zoom. Blue accent scoped via `.graph-blue`; space styles +
-  loader live in `globals.css` (`.gspace-*`).
-  - `SpaceGraph.tsx` = the R3F scene (lazy-loaded via `next/dynamic` `ssr:false` — three
-    needs `window`). `types.ts` = shared `GraphData`/`GNodeData`. `GraphPanel.tsx` =
-    click-to-inspect side panel (decision-maker **Enrich** reuses `revealContact`;
-    funding panel lists rounds). `LoadingScreen.tsx` = the dedicated mission-control
-    loader shown while a report streams (`!done`), built from `buildTrace` steps.
+- **Graph View** (`components/graph/`) is the **default**, **full-screen** results view
+  (Table View = the tabs, toggled). It's a **true 3D force-directed network**
+  (`react-force-graph-3d`, the React binding of `3d-force-graph`; wraps three +
+  three-forcegraph + d3-force-3d), Palantir-Gotham-styled: **no ring/orbit math** —
+  positions come from the force sim only.
+  - `SpaceGraph.tsx` = the force graph (lazy-loaded via `next/dynamic` `ssr:false` —
+    three/webgl need `window`). Nodes = **icosahedrons** (low-poly) with emissive
+    material + a wireframe overlay; company = bright anchor pinned at origin
+    (`fx/fy/fz=0`). Sized by metric (seniority / log-headcount), colored per category
+    (people blue, depts green, competitors purple, tech slate, funding gold). A custom
+    **clustering force** (`d3Force('cluster', …)`) biases each category toward its own
+    centroid direction; charge repulsion prevents overlap; link distance is shorter for
+    senior people / big depts, longer for competitors. **UnrealBloomPass** post-process
+    for glow, **directional-particle** links, a far **starfield** (`THREE.Points`, fixed
+    size), camera **zoomToFit** on `onEngineStop`, and **idle auto-rotate** (OrbitControls,
+    pauses on interaction). Labels on hover only; click → fly-to + side panel.
+  - `types.ts` = shared `GraphData`/`GNodeData`. `GraphPanel.tsx` = click-to-inspect side
+    panel (decision-maker **Enrich** reuses `revealContact`; funding panel lists rounds).
+    `LoadingScreen.tsx` = dedicated loader shown while a report streams (`!done`), built
+    from `buildTrace` steps, **revealing each step card sequentially** (`.gspace-reveal`).
   - Fed by the **in-memory `Report`** (no new route/fetch — preserves cost discipline).
-    Results top = compact search + Graph/Table toggle; loading screen → graph on `done`.
+    Results chrome = a single minimal top bar (logo + compact search + Graph/Table toggle
+    + powered-by); the graph fills the rest of the viewport. Blue accent scoped via
+    `.graph-blue`; `.gspace-*` styles live in `globals.css`.
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section

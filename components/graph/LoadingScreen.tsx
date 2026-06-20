@@ -14,7 +14,7 @@ function StatusDot({ status }: { status: StepStatus }) {
 // Full-area space "mission control" loader shown while a report streams in.
 export default function LoadingScreen({ steps, domain }: { steps: TraceStep[]; domain: string }) {
   return (
-    <div className="graph-blue relative h-[78vh] min-h-[520px] w-full border border-line overflow-hidden bg-[#04050a] grid place-items-center">
+    <div className="graph-blue relative h-full min-h-[520px] w-full overflow-hidden bg-[#04050a] grid place-items-center">
       <div className="flex flex-col items-center gap-8 px-6">
         {/* orbiting system */}
         <div className="gspace-loader" aria-hidden>
@@ -39,10 +39,11 @@ export default function LoadingScreen({ steps, domain }: { steps: TraceStep[]; d
 
         {/* live step checklist */}
         <ol className="w-full max-w-md space-y-2">
-          {steps.map((s) => (
+          {steps.map((s, i) => (
             <li
               key={s.key}
-              className="flex items-center gap-3 border border-line bg-ink-2/50 px-3 py-2"
+              className="gspace-reveal flex items-center gap-3 border border-line bg-ink-2/50 px-3 py-2"
+              style={{ animationDelay: `${i * 0.45}s` }}
             >
               <StatusDot status={s.status} />
               <div className="min-w-0 flex-1">

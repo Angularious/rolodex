@@ -300,42 +300,83 @@ export default function Home() {
       />
 
       <div className="min-h-screen flex flex-col">
-        {/* Header */}
+        {/* Header — minimal single line; in results it carries the search + toggle */}
         <header className="sticky top-0 z-30 border-b border-line bg-ink/70 backdrop-blur-md">
-          <div className="mx-auto max-w-6xl px-5 h-[54px] flex items-center justify-between">
+          <div className={`${showReport ? 'px-4' : 'mx-auto max-w-6xl px-5'} h-[54px] flex items-center gap-3`}>
             <button
               onClick={reset}
-              className="font-display text-base sm:text-lg tracking-tight flex items-center gap-2 text-cream"
+              className="font-display text-base tracking-tight flex items-center gap-2 text-cream shrink-0"
             >
-              <span className="text-accent">◇</span> COMPANY ROLODEX
+              <span className="text-accent">◇</span>
+              <span className="hidden sm:inline">COMPANY ROLODEX</span>
             </button>
+
+            {showReport && (
+              <form onSubmit={onSubmit} className="flex-1 min-w-0 max-w-xl flex items-center gap-2">
+                <input
+                  className="retro-input border-line bg-card py-1.5 text-sm focus:shadow-none"
+                  placeholder="company domain or name"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  spellCheck={false}
+                />
+                <button
+                  type="submit"
+                  disabled={status === 'searching'}
+                  className="retro-btn retro-btn-blue retro-btn-sm whitespace-nowrap"
+                >
+                  {status === 'searching' ? 'Scanning…' : 'Run →'}
+                </button>
+              </form>
+            )}
+
+            {showReport && done && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setView('graph')}
+                  className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                >
+                  ◈ Graph
+                </button>
+                <button
+                  onClick={() => setView('table')}
+                  className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
+                >
+                  ▦ Table
+                </button>
+              </div>
+            )}
+
             <a
               href="https://orthogonal.com"
               target="_blank"
               rel="noreferrer"
               onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
-              className="font-mono text-[0.7rem] uppercase tracking-[0.18em] rounded-full border border-line px-3 py-1.5 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors"
+              className={`${showReport ? 'shrink-0' : 'ml-auto'} font-mono text-[0.62rem] uppercase tracking-[0.16em] rounded-full border border-line px-2.5 py-1 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors whitespace-nowrap`}
             >
-              Powered by orthogonal.com ↗
+              <span className="hidden md:inline">Powered by </span>orthogonal.com ↗
             </a>
           </div>
         </header>
 
-        <main className="mx-auto max-w-6xl w-full px-4 flex-1">
-          {/* Search */}
-          <section className={`text-center ${status === 'idle' ? 'py-20 sm:py-28' : 'py-8'}`}>
-            {status === 'idle' && (
-              <>
-                <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
-                <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
-                  Company <em>Rolodex</em>
-                </h1>
-                <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
-                  Type a company domain or name. Get an instant intelligence report — profile,
-                  departments, locations, competitors, and people.
-                </p>
-              </>
-            )}
+        <main
+          className={
+            showReport && view === 'graph'
+              ? 'w-full flex-1 flex flex-col'
+              : 'mx-auto max-w-6xl w-full px-4 flex-1'
+          }
+        >
+          {/* Search — landing only; in results it lives in the header bar */}
+          {status === 'idle' && (
+            <section className="text-center py-20 sm:py-28">
+              <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
+              <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
+                Company <em>Rolodex</em>
+              </h1>
+              <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
+                Type a company domain or name. Get an instant intelligence report — profile,
+                departments, locations, competitors, and people.
+              </p>
 
             <form
               onSubmit={onSubmit}
@@ -349,12 +390,8 @@ export default function Home() {
                 autoFocus
                 spellCheck={false}
               />
-              <button
-                type="submit"
-                className="retro-btn retro-btn-blue whitespace-nowrap"
-                disabled={status === 'searching'}
-              >
-                {status === 'searching' ? 'Scanning…' : 'Run report →'}
+              <button type="submit" className="retro-btn retro-btn-blue whitespace-nowrap">
+                Run report →
               </button>
             </form>
 
@@ -376,56 +413,42 @@ export default function Home() {
               </div>
             )}
           </section>
+          )}
 
           {/* Error */}
           {status === 'error' && error && <ErrorScreen error={error} onReset={reset} />}
 
-          {/* Report */}
-          {showReport && report && (
-            <section>
-              {!done ? (
+          {/* Report — loading screen, then full-bleed graph or the table view */}
+          {showReport &&
+            report &&
+            (!done ? (
+              <div className="flex-1 flex">
                 <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
-              ) : (
-                <>
-                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setView('graph')}
-                        className={`retro-btn retro-btn-sm ${view === 'graph' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
-                      >
-                        ◈ Graph View
-                      </button>
-                      <button
-                        onClick={() => setView('table')}
-                        className={`retro-btn retro-btn-sm ${view === 'table' ? 'retro-btn-blue' : 'retro-btn-ghost'}`}
-                      >
-                        ▦ Table View
-                      </button>
-                    </div>
-                    <span className="font-mono text-[0.66rem] text-muted">
-                      ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
-                      {report.resolvedFrom ? ` · ${report.resolvedFrom} → ${report.domain}` : ''}
-                    </span>
-                  </div>
-
-                  {view === 'graph' ? (
-                    <SpaceGraph
-                      data={{
-                        domain: report.domain,
-                        company: report.company,
-                        competitors: report.competitors,
-                        competitorsLoading: report.competitorsLoading,
-                        decisionMakers: report.decisionMakers,
-                        decisionMakersLoading: report.decisionMakersLoading,
-                        workforce: report.workforce,
-                        workforceLoading: report.workforceLoading,
-                      }}
-                      onReveal={revealContact}
-                      onSearchCompany={(d) => requestSearch(d)}
-                      onSwitchToTable={() => setView('table')}
-                    />
-                  ) : (
-                    <>
+              </div>
+            ) : view === 'graph' ? (
+              <div className="flex-1 min-h-[70vh]">
+                <SpaceGraph
+                  data={{
+                    domain: report.domain,
+                    company: report.company,
+                    competitors: report.competitors,
+                    competitorsLoading: report.competitorsLoading,
+                    decisionMakers: report.decisionMakers,
+                    decisionMakersLoading: report.decisionMakersLoading,
+                    workforce: report.workforce,
+                    workforceLoading: report.workforceLoading,
+                  }}
+                  onReveal={revealContact}
+                  onSearchCompany={(d) => requestSearch(d)}
+                  onSwitchToTable={() => setView('table')}
+                />
+              </div>
+            ) : (
+              <section className="w-full pb-10">
+                <div className="font-mono text-[0.66rem] text-muted mb-3">
+                  ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
+                  {report.resolvedFrom ? ` · ${report.resolvedFrom} → ${report.domain}` : ''}
+                </div>
               {report.company ? (
                 <CompanyCard company={report.company} />
               ) : report.companyError ? (
@@ -489,12 +512,8 @@ export default function Home() {
                   />
                 )}
               </div>
-                  </>
-                  )}
-                </>
-              )}
-            </section>
-          )}
+              </section>
+            ))}
         </main>
 
         <Footer />

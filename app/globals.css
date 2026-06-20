@@ -432,8 +432,15 @@ body {
   border-radius: 50%; background: var(--accent-soft); box-shadow: 0 0 8px var(--accent);
 }
 .gspace-blink { animation: gpulse 1.2s ease-in-out infinite; }
+/* Loading checklist: each card reveals one at a time (staggered entrance). */
+.gspace-reveal { opacity: 0; animation: greveal 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+@keyframes greveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @keyframes gorbit { to { transform: translate(-50%, -50%) rotate(360deg); } }
 @keyframes gpulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .gspace-orbit, .gspace-blink { animation: none; }
+  .gspace-reveal { opacity: 1; animation: none; }
 }
