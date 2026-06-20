@@ -227,6 +227,11 @@ function nodeObject(node: GNode): THREE.Object3D {
   return group;
 }
 
+// Stable accessor fns (module scope) so they don't churn ForceGraph each render.
+const nodeLabelFn = (n: GNode) =>
+  `<span style="font-family:monospace;font-size:11px">${n.label}</span>`;
+const linkColorFn = (l: GLink) => l.color;
+
 function keyOf(p: DecisionMaker) {
   return p.linkedin || p.name;
 }
@@ -242,11 +247,19 @@ export default function SpaceGraph({
   onSearchCompany: (domain: string) => void;
   onSwitchToTable: () => void;
 }) {
-  const graph = useMemo(() => buildGraph(data), [data]);
+  // Depend on the underlying fields, NOT the `data` object (which page.tsx
+  // recreates every render). Otherwise the graph gets a new identity on every
+  // render → ForceGraph3D re-ingests + re-heats the sim → the flashing.
+  const graph = useMemo(
+    () => buildGraph(data),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.domain, data.company, data.competitors, data.decisionMakers, data.workforce],
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fg = useRef<any>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fitted = useRef(false);
   // Seed a non-zero size immediately (client-only here) so the canvas always
   // mounts; the ResizeObserver refines it to the container.
   const [size, setSize] = useState(() => ({
@@ -260,9 +273,16 @@ export default function SpaceGraph({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    const apply = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      // Only update on a real change — redundant setState was thrashing the
+      // canvas (resize flash / enlarge-then-back).
+      setSize((s) => (Math.abs(s.w - w) < 1 && Math.abs(s.h - h) < 1 ? s : { w, h }));
+    };
+    const ro = new ResizeObserver(apply);
     ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight });
+    apply();
     return () => ro.disconnect();
   }, []);
 
@@ -270,6 +290,7 @@ export default function SpaceGraph({
   useEffect(() => {
     const inst = fg.current;
     if (!inst) return;
+    fitted.current = false; // a fresh graph should fit once
 
     // forces
     inst.d3Force('charge')?.strength(-140);
@@ -348,6 +369,14 @@ export default function SpaceGraph({
   // zoom-in/out reposition). The view stays exactly where the user left it.
   const onNodeClick = useCallback((node: GNode) => setSelected(node.data), []);
 
+  // Fit the view exactly once per graph — re-fitting on later engine stops/
+  // resizes is what caused the "enlarge then back" reframe.
+  const handleEngineStop = useCallback(() => {
+    if (fitted.current) return;
+    fitted.current = true;
+    fg.current?.zoomToFit(700, 90);
+  }, []);
+
   return (
     <div ref={wrapRef} className="graph-blue relative h-full w-full bg-[#020308]">
       {size.w > 0 && (
@@ -360,18 +389,18 @@ export default function SpaceGraph({
           showNavInfo={false}
           controlType="orbit"
           nodeThreeObject={nodeObject as never}
-          nodeLabel={((n: GNode) => `<span style="font-family:monospace;font-size:11px">${n.label}</span>`) as never}
-          linkColor={((l: GLink) => l.color) as never}
+          nodeLabel={nodeLabelFn as never}
+          linkColor={linkColorFn as never}
           linkOpacity={0.3}
           linkWidth={0.4}
           linkDirectionalParticles={2}
           linkDirectionalParticleWidth={1.1}
           linkDirectionalParticleSpeed={0.006}
-          linkDirectionalParticleColor={((l: GLink) => l.color) as never}
+          linkDirectionalParticleColor={linkColorFn as never}
           enableNodeDrag={false}
           warmupTicks={40}
           cooldownTicks={120}
-          onEngineStop={() => fg.current?.zoomToFit(700, 90)}
+          onEngineStop={handleEngineStop}
           onNodeClick={onNodeClick as never}
         />
       )}
