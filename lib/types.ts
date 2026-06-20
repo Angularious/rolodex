@@ -103,6 +103,9 @@ export type StreamMessage =
   | { type: 'competitors'; data: Competitor[] | null; error?: string }
   | { type: 'employees'; data: Employee[]; totalAvailable: number; error?: string }
   | { type: 'decisionmakers'; data: DecisionMaker[] | null; error?: string }
+  // Aborts the report mid-stream and shows a full-screen error (e.g. the
+  // Orthogonal key hit its limit, so every section is failing the same way).
+  | { type: 'fatal'; error: SearchError['error'] }
   | { type: 'done'; cost: number; durationMs: number };
 
 export interface SearchError {

@@ -5,6 +5,7 @@ import { reserveSpend, reconcileSpend } from '@/lib/spend';
 import { originAllowed, isBotUserAgent } from '@/lib/guard';
 import { resolveWorkEmail } from '@/lib/companyenrich';
 import { revealByLinkedin } from '@/lib/contactout';
+import { isQuotaError } from '@/lib/orthogonal';
 import type { RevealResult, SearchError } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -86,9 +87,11 @@ export async function POST(req: NextRequest) {
         result.source = 'contactout';
       }
     }
-  } catch {
+  } catch (err) {
     // Reconcile whatever we actually spent before failing, then report cleanly.
     await reconcileSpend(spentUsd - ESTIMATE_USD);
+    // Key hit its limit → capacity, so the client can message it consistently.
+    if (isQuotaError(err)) return errorResponse({ error: 'capacity' }, 503);
     return errorResponse({ error: 'server_error', message: 'Reveal failed.' }, 502);
   }
 

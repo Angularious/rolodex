@@ -17,6 +17,7 @@ import {
 import { decisionMakers, mapDecisionMakers } from '@/lib/contactout';
 import { similar, mapCompetitors } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
+import { isQuotaError } from '@/lib/orthogonal';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -119,8 +120,10 @@ export async function POST(req: NextRequest) {
       domain = resolvedDomain.toLowerCase();
       resolvedFrom = norm.name;
       preResolvedCompany = mapCompany(raw, domain);
-    } catch {
+    } catch (err) {
       await reconcileSpend(initialSpent - ESTIMATE_USD);
+      // Key hit its limit while resolving → show capacity, not a generic error.
+      if (isQuotaError(err)) return errorResponse({ error: 'capacity' }, 503);
       return errorResponse({ error: 'server_error' }, 502);
     }
   } else {
@@ -137,6 +140,14 @@ export async function POST(req: NextRequest) {
       const write = (msg: StreamMessage) =>
         controller.enqueue(encoder.encode(JSON.stringify(msg) + '\n'));
 
+      // If a section fails because the key hit its limit, every section is
+      // failing the same way — flip this and abort the report with a capacity
+      // screen instead of rendering a report full of empty sections.
+      let quotaHit = false;
+      const noteQuota = (err: unknown) => {
+        if (isQuotaError(err)) quotaHit = true;
+      };
+
       write({ type: 'meta', domain, resolvedFrom });
 
       // Workforce is fetched once and reused: the company-profile job falls back
@@ -150,7 +161,8 @@ export async function POST(req: NextRequest) {
               spentUsd += PRICE.enrich;
               write({ type: 'company', data: mapCompany(raw, domain) });
             })
-            .catch(async () => {
+            .catch(async (err) => {
+              noteQuota(err);
               // Fallback: derive the profile from the workforce company_id.
               try {
                 const wf = await wfPromise;
@@ -161,8 +173,8 @@ export async function POST(req: NextRequest) {
                   write({ type: 'company', data: mapCompany(raw, domain) });
                   return;
                 }
-              } catch {
-                /* fall through to error */
+              } catch (fallbackErr) {
+                noteQuota(fallbackErr);
               }
               write({ type: 'company', data: null, error: 'unavailable' });
             });
@@ -174,26 +186,38 @@ export async function POST(req: NextRequest) {
             spentUsd += PRICE.workforce;
             write({ type: 'workforce', data: mapWorkforce(raw) });
           })
-          .catch(() => write({ type: 'workforce', data: null, error: 'unavailable' })),
+          .catch((err) => {
+            noteQuota(err);
+            write({ type: 'workforce', data: null, error: 'unavailable' });
+          }),
         peopleSearch(domain, PAGE_SIZE)
           .then((raw) => {
             const mapped = mapPeople(raw);
             spentUsd += PRICE.perPerson * mapped.employees.length;
             write({ type: 'employees', data: mapped.employees, totalAvailable: mapped.totalAvailable });
           })
-          .catch(() => write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' })),
+          .catch((err) => {
+            noteQuota(err);
+            write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' });
+          }),
         similar(domain)
           .then((raw) => {
             spentUsd += PRICE.competitors;
             write({ type: 'competitors', data: mapCompetitors(raw) });
           })
-          .catch(() => write({ type: 'competitors', data: null, error: 'unavailable' })),
+          .catch((err) => {
+            noteQuota(err);
+            write({ type: 'competitors', data: null, error: 'unavailable' });
+          }),
         decisionMakers(domain, DM_PAGE_SIZE)
           .then((raw) => {
             spentUsd += PRICE.decisionMakers;
             write({ type: 'decisionmakers', data: mapDecisionMakers(raw) });
           })
-          .catch(() => write({ type: 'decisionmakers', data: null, error: 'unavailable' })),
+          .catch((err) => {
+            noteQuota(err);
+            write({ type: 'decisionmakers', data: null, error: 'unavailable' });
+          }),
       ];
 
       await Promise.allSettled(jobs);
@@ -201,6 +225,9 @@ export async function POST(req: NextRequest) {
       const cost = Math.round(spentUsd * 100) / 100;
       // Reconcile the worst-case reservation down to the real cost.
       await reconcileSpend(spentUsd - ESTIMATE_USD);
+
+      // Key limit hit mid-stream → abort to the capacity screen.
+      if (quotaHit) write({ type: 'fatal', error: 'capacity' });
 
       const durationMs = Date.now() - started;
       write({ type: 'done', cost, durationMs });
@@ -211,7 +238,7 @@ export async function POST(req: NextRequest) {
         domain,
         durationMs,
         cost,
-        success: true,
+        success: !quotaHit,
       });
 
       controller.close();
