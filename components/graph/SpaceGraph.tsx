@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import * as THREE from 'three';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 import type { GraphData, GNodeData } from './types';
 import GraphPanel, { type RevealState } from './GraphPanel';
@@ -248,7 +247,12 @@ export default function SpaceGraph({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fg = useRef<any>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  // Seed a non-zero size immediately (client-only here) so the canvas always
+  // mounts; the ResizeObserver refines it to the container.
+  const [size, setSize] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    h: typeof window !== 'undefined' ? Math.max(520, window.innerHeight - 56) : 720,
+  }));
   const [selected, setSelected] = useState<GNodeData | null>(null);
   const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
 
@@ -272,13 +276,17 @@ export default function SpaceGraph({
     inst.d3Force('link')?.distance((l: GLink) => l.dist).strength(0.7);
     inst.d3Force('cluster', clusterForce());
 
-    // bloom — the "glowing data construct" look
-    try {
-      const bloom = new UnrealBloomPass(new THREE.Vector2(size.w || 1200, size.h || 800), 1.3, 0.65, 0.08);
-      inst.postProcessingComposer().addPass(bloom);
-    } catch {
-      /* composer not ready — skip bloom */
-    }
+    // bloom — the "glowing data construct" look. Loaded lazily + guarded so a
+    // failed example-module import can never blank the whole graph.
+    (async () => {
+      try {
+        const { UnrealBloomPass } = await import('three/examples/jsm/postprocessing/UnrealBloomPass.js');
+        const bloom = new UnrealBloomPass(new THREE.Vector2(size.w || 1200, size.h || 800), 1.3, 0.65, 0.08);
+        inst.postProcessingComposer().addPass(bloom);
+      } catch {
+        /* bloom unavailable — graph still renders without it */
+      }
+    })();
 
     // far starfield (not part of the simulation; fixed-size points)
     const N = 2200;

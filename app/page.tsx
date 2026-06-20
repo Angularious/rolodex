@@ -24,7 +24,14 @@ import { type TraceStep } from '@/components/OrchestrationTrace';
 import LoadingScreen from '@/components/graph/LoadingScreen';
 
 // WebGL scene — client-only (three.js needs the browser).
-const SpaceGraph = dynamic(() => import('@/components/graph/SpaceGraph'), { ssr: false });
+const SpaceGraph = dynamic(() => import('@/components/graph/SpaceGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full grid place-items-center bg-[#020308] font-mono text-xs text-muted">
+      initializing graph…
+    </div>
+  ),
+});
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
@@ -289,11 +296,15 @@ export default function Home() {
   };
 
   const showReport = (status === 'searching' || status === 'ready') && report;
+  // Full-bleed, dot-field-free chrome for the graph AND the loading screen
+  // (loading always uses the space canvas, regardless of the chosen view).
+  const graphFull = !!showReport && (view === 'graph' || !done);
 
   return (
     <ToastProvider>
-      {/* Animated dot-field background + legibility scrim (blue in graph view) */}
-      <FieldBackground theme={showReport && view === 'graph' ? 'blue' : 'purple'} />
+      {/* Dot-field background — hidden in the graph/loading view, which has its
+          own starfield on a near-black canvas (else the field bleeds through). */}
+      {!graphFull && <FieldBackground theme="purple" />}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
@@ -361,9 +372,7 @@ export default function Home() {
 
         <main
           className={
-            showReport && view === 'graph'
-              ? 'w-full flex-1 flex flex-col'
-              : 'mx-auto max-w-6xl w-full px-4 flex-1'
+            graphFull ? 'w-full flex-1 flex flex-col' : 'mx-auto max-w-6xl w-full px-4 flex-1'
           }
         >
           {/* Search — landing only; in results it lives in the header bar */}
@@ -426,7 +435,7 @@ export default function Home() {
                 <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
               </div>
             ) : view === 'graph' ? (
-              <div className="flex-1 min-h-[70vh]">
+              <div className="flex-1 min-h-[70vh] bg-[#020308]">
                 <SpaceGraph
                   data={{
                     domain: report.domain,
