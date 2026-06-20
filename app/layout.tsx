@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Newsreader, Instrument_Sans, IBM_Plex_Mono, Space_Grotesk } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 
 // Type system mirrors tryclean.ai's: a serif for big editorial headlines
@@ -42,7 +43,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${serif.variable} ${sans.variable} ${mono.variable} ${display.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
