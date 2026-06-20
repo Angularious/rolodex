@@ -35,7 +35,13 @@ the user's keys; it's already gitignore'd so it never gets committed.
   `workforce`, `employees`, `competitors`, `decisionmakers`, `done`) → record
   spend → log analytics. Per-section failures are isolated (emit `{data:null,error}`).
   The company-profile job falls back to `GET /companies?id=` (id from the workforce
-  response) if `GET /companies/enrich?domain=` fails.
+  response) if `GET /companies/enrich?domain=` fails. **Funding fallback:** if the
+  resolved profile has no round-level funding detail, the company job pulls
+  structured rounds from **Aviato** (`/company/funding-rounds`, flat $0.08) and
+  merges them in before emitting `company` (so the card waits only when funding is
+  thin). Aviato rounds are sanity-filtered in `lib/aviato.ts` (drop rows raising
+  more than the company's max known valuation + acquisition/IPO-shaped rows — this
+  is what kills Aviato mislabelling, e.g. the $20B Adobe deal as a "Venture Round").
 - **`/api/reveal`** is the on-demand email/phone route (per-click, not streamed).
   Same gating as search. Tiered: Company Enrich `/people/email` by person id ($0.12)
   → fall back to ContactOut `/v1/linkedin/enrich` ($0.55). Records real dollar cost.
@@ -72,7 +78,9 @@ people×10 $0.245 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
 line dominates. **`DM_PAGE_SIZE` is decoupled from `PAGE_SIZE`** — the
 decision-makers call is a flat $0.05 regardless of `per_page` (`reveal_info=false`),
 so it stays at 25 to surface more decision-makers for free; only the employee
-people-search scales with count.
+people-search scales with count. **Funding fallback (Aviato $0.08) fires only when
+CE returns no round detail**, so it adds to a search's cost (≈ $0.46) only on those;
+worst case is reserved up front in `ESTIMATE_USD`.
 Reveals are billed on demand on top:
 - **Employee reveal** — CE `/people/email` hit = $0.12; CE miss → ContactOut
   fallback = $0.12 + $0.55 = **$0.67** (so a CE miss costs *more* than going
@@ -102,7 +110,8 @@ Reveals are billed on demand on top:
 - **Spend ledger is in DOLLARS** — reserve/reconcile pass dollar amounts (per-call
   prices vary by provider). Don't revert to a flat per-call multiplier.
 - Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
-  `lib/contactout.ts` (decision-makers/reveal), `lib/tomba.ts` (similar only).
+  `lib/contactout.ts` (decision-makers/reveal), `lib/tomba.ts` (similar only),
+  `lib/aviato.ts` (funding-rounds fallback, with sanity filter).
 - Data quality varies by domain. Good demo targets (verified): stripe.com,
   google.com, spacex.com, figma.com.
 
