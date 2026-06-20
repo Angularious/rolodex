@@ -59,6 +59,16 @@ export default function DepartmentsTab({
               <span className="font-display text-lg">{d.count.toLocaleString()}</span>
             </div>
             <Bar value={d.count} max={maxDept} />
+            {d.delta != null && d.delta !== 0 && (
+              <div
+                className={`mt-1 text-[0.7rem] font-mono ${d.delta > 0 ? 'text-accent-soft' : 'text-slate'}`}
+                title={workforce.growthSince ? `since ${workforce.growthSince}` : undefined}
+              >
+                {d.delta > 0 ? '+' : ''}
+                {d.delta.toLocaleString()}
+                {workforce.growthSince ? ` since ${workforce.growthSince}` : ''}
+              </div>
+            )}
           </button>
         ))}
       </div>

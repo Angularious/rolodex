@@ -7,6 +7,9 @@ export interface SocialLinks {
   github?: string | null;
   instagram?: string | null;
   youtube?: string | null;
+  crunchbase?: string | null;
+  angellist?: string | null;
+  g2?: string | null;
 }
 
 export interface FundingRound {
@@ -14,6 +17,7 @@ export interface FundingRound {
   amount: string | null; // human label, e.g. "$415.7M" or null
   type: string | null; // e.g. "Series F"
   investors: string | null; // comma-joined investor names or null
+  valuation?: string | null; // human label, e.g. "$35B" (Aviato-sourced rounds only)
 }
 
 export interface Company {
@@ -28,12 +32,15 @@ export interface Company {
   industries: string[];
   categories?: string[]; // e.g. ["b2b", "saas"]
   hqLocation?: string | null;
+  phone?: string | null; // HQ phone, e.g. "+1 415-298-5539"
   logo?: string | null;
   socials: SocialLinks;
   tech: string[];
+  keywords?: string[]; // descriptor tags, e.g. ["payment processing", "billing"]
   // Funding
   fundingTotal?: string | null; // human label, e.g. "$747M"
   fundingStage?: string | null; // e.g. "secondary_market"
+  fundingDate?: string | null; // ISO date of the most recent funding event
   fundingRounds?: FundingRound[];
   stockSymbol?: string | null; // e.g. "NYSE:FIG"
   lastUpdated?: string | null;
@@ -42,6 +49,7 @@ export interface Company {
 export interface DeptCount {
   name: string;
   count: number;
+  delta?: number | null; // headcount change over the workforce history window
 }
 
 export interface WorkforcePoint {
@@ -54,6 +62,7 @@ export interface Workforce {
   range: string | null; // employee-count bucket
   departments: DeptCount[];
   history?: WorkforcePoint[]; // oldest→newest, for a trend line
+  growthSince?: string | null; // ISO date the per-department deltas are measured from
 }
 
 export interface Competitor {
@@ -73,6 +82,8 @@ export interface Employee {
   linkedin?: string | null;
   country?: string | null; // ISO-2 uppercased
   location?: string | null; // human label (city, country)
+  photo?: string | null; // profile image URL
+  startedAt?: string | null; // ISO start date of the role at this company
   // Revealed on demand via /api/reveal; null until then.
   email?: string | null;
 }
@@ -86,6 +97,14 @@ export interface DecisionMaker {
   seniority?: string | null;
   jobFunction?: string | null;
   linkedin?: string | null;
+  // Rich profile fields returned free by the decision-makers call.
+  photo?: string | null; // profile picture URL
+  summary?: string | null; // bio
+  followers?: number | null;
+  industry?: string | null;
+  skills?: string[]; // top skills
+  experience?: string[]; // pre-formatted work-history lines
+  education?: string[]; // pre-formatted education lines
   // Coverage flags returned for free (before paying to reveal).
   hasWorkEmail: boolean;
   hasPersonalEmail: boolean;

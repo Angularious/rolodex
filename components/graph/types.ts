@@ -1,6 +1,6 @@
 // Shared data types + palette for the graph (HUD) view and its inspector.
 
-import type { Company, Competitor, DecisionMaker, FundingRound, Workforce } from '@/lib/types';
+import type { Company, Competitor, DecisionMaker, DeptCount, Employee, FundingRound, Workforce } from '@/lib/types';
 
 // Gotham-style categories (clusters). Colors matched to the reference.
 export type Category = 'company' | 'people' | 'departments' | 'competitors' | 'funding' | 'tech';
@@ -40,7 +40,7 @@ export interface GNodeData {
   company?: Company;
   competitor?: Competitor;
   person?: DecisionMaker;
-  department?: { name: string; count: number };
+  department?: DeptCount;
   tech?: string; // a single tool (tech nodes are individual now)
   round?: FundingRound;
   more?: { category: Category; count: number };
@@ -56,4 +56,6 @@ export interface GraphData {
   decisionMakersLoading: boolean;
   workforce: Workforce | null;
   workforceLoading: boolean;
+  employees: Employee[];
+  employeesTotal: number;
 }

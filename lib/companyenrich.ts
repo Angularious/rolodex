@@ -34,6 +34,7 @@ interface RawCompany {
   industry?: string | null;
   industries?: string[] | null;
   categories?: string[] | null;
+  keywords?: string[] | null;
   employees?: string | null;
   revenue?: string | null;
   description?: string | null;
@@ -44,11 +45,13 @@ interface RawCompany {
     state?: { name?: string | null; code?: string | null } | null;
     city?: { name?: string | null } | null;
     address?: string | null;
+    phone?: string | null;
   } | null;
   financial?: {
     stock_symbol?: string | null;
     total_funding?: number | null;
     funding_stage?: string | null;
+    funding_date?: string | null;
     funding?: RawFundingItem[] | null;
   } | null;
   socials?: {
@@ -58,6 +61,9 @@ interface RawCompany {
     instagram_url?: string | null;
     github_url?: string | null;
     youtube_url?: string | null;
+    crunchbase_url?: string | null;
+    angellist_url?: string | null;
+    g2_url?: string | null;
   } | null;
   logo_url?: string | null;
   updated_at?: string | null;
@@ -71,6 +77,7 @@ interface RawWorkforce {
   history?: Array<{
     date?: string | null;
     observed_employee_count?: number | null;
+    department_headcount?: Record<string, number> | null;
   }> | null;
 }
 
@@ -103,6 +110,7 @@ interface RawPerson {
     address?: string | null;
   } | null;
   socials?: { linkedin_url?: string | null } | null;
+  image_url?: string | null;
   experiences?: RawExperience[] | null;
 }
 
@@ -265,6 +273,9 @@ export function mapCompany(raw: RawCompany, fallbackDomain: string): Company {
     instagram: s.instagram_url ?? null,
     github: s.github_url ?? null,
     youtube: s.youtube_url ?? null,
+    crunchbase: s.crunchbase_url ?? null,
+    angellist: s.angellist_url ?? null,
+    g2: s.g2_url ?? null,
   };
 
   return {
@@ -283,11 +294,14 @@ export function mapCompany(raw: RawCompany, fallbackDomain: string): Company {
       raw.location?.state?.name,
       raw.location?.country?.name,
     ]),
+    phone: raw.location?.phone ?? null,
     logo: raw.logo_url ?? null,
     socials,
     tech: (raw.technologies ?? []).filter(Boolean).slice(0, 24),
+    keywords: (raw.keywords ?? []).filter(Boolean).slice(0, 18),
     fundingTotal: fmtMoney(f.total_funding),
     fundingStage: f.funding_stage ?? null,
+    fundingDate: f.funding_date ? f.funding_date.slice(0, 10) : null,
     fundingRounds: rounds,
     stockSymbol: f.stock_symbol ?? null,
     lastUpdated: raw.updated_at ?? null,
@@ -296,12 +310,22 @@ export function mapCompany(raw: RawCompany, fallbackDomain: string): Company {
 
 export function mapWorkforce(raw: RawWorkforce): Workforce | null {
   if (!raw) return null;
+
+  // Per-department headcount change over the history window. The API returns
+  // history newest→oldest, and each point carries its own department_headcount,
+  // so the oldest point with department detail is the baseline.
+  const hist = raw.history ?? [];
+  const baseline = [...hist].reverse().find((h) => h.department_headcount)?.department_headcount ?? null;
+  const growthSince = baseline ? ([...hist].reverse().find((h) => h.department_headcount)?.date ?? null) : null;
+  const deltaFor = (key: string): number | null =>
+    baseline ? (raw.department_headcount?.[key] ?? 0) - (baseline[key] ?? 0) : null;
+
   const departments: DeptCount[] = Object.entries(raw.department_headcount ?? {})
     .filter(([, v]) => (v ?? 0) > 0)
-    .map(([name, count]) => ({ name: deptLabel(name) ?? name, count }))
+    .map(([name, count]) => ({ name: deptLabel(name) ?? name, count, delta: deltaFor(name) }))
     .sort((a, b) => b.count - a.count);
 
-  const history: WorkforcePoint[] = (raw.history ?? [])
+  const history: WorkforcePoint[] = hist
     .filter((h) => h.date && typeof h.observed_employee_count === 'number')
     .map((h) => ({ date: h.date as string, total: h.observed_employee_count as number }))
     .reverse(); // API returns newest→oldest; we want oldest→newest for a trend
@@ -311,6 +335,7 @@ export function mapWorkforce(raw: RawWorkforce): Workforce | null {
     range: raw.employee_count_range ?? null,
     departments,
     history: history.length > 1 ? history : undefined,
+    growthSince: growthSince ? growthSince.slice(0, 7) : null,
   };
 }
 
@@ -361,6 +386,8 @@ export function mapPeople(raw: RawPeopleSearch): {
       linkedin: p.socials?.linkedin_url ?? null,
       country: code,
       location: p.location?.address ?? p.location?.country?.name ?? null,
+      photo: p.image_url ?? null,
+      startedAt: role.startDate ?? null,
       email: null,
     });
   }

@@ -25,6 +25,34 @@ function Coverage({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+// Avatar that quietly removes itself if the image fails to load (some profile
+// image URLs 404 / require auth) — falls back to initials.
+export function Avatar({ src, name, size = 40 }: { src?: string | null; name: string; size?: number }) {
+  const [ok, setOk] = useState(Boolean(src));
+  const initials = name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const style = { width: size, height: size };
+  if (src && ok) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={src}
+        alt=""
+        style={style}
+        onError={() => setOk(false)}
+        className="rounded-full object-cover border border-line shrink-0"
+      />
+    );
+  }
+  return (
+    <div
+      style={style}
+      className="rounded-full grid place-items-center bg-card border border-line text-[0.6rem] font-bold text-slate shrink-0"
+    >
+      {initials || '—'}
+    </div>
+  );
+}
+
 export function DecisionMakersSkeleton() {
   return (
     <div className="pop-in">
@@ -52,6 +80,7 @@ export default function DecisionMakersTab({
   const toast = useToast();
   const [func, setFunc] = useState('');
   const [revealed, setRevealed] = useState<Record<string, RevealState>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const functions = useMemo(
     () =>
@@ -115,11 +144,16 @@ export default function DecisionMakersTab({
           return (
             <div key={rowKey(d)} className="retro-panel-flat p-3">
               <div className="flex justify-between items-start gap-2">
-                <div className="min-w-0">
-                  <div className="font-bold truncate">{d.name}</div>
-                  <div className="text-sm text-slate truncate">{d.title || d.headline || '—'}</div>
-                  <div className="text-xs text-slate truncate">
-                    {[d.jobFunction, d.seniority, d.location].filter(Boolean).join(' · ') || '—'}
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Avatar src={d.photo} name={d.name} />
+                  <div className="min-w-0">
+                    <div className="font-bold truncate">{d.name}</div>
+                    <div className="text-sm text-slate truncate">{d.title || d.headline || '—'}</div>
+                    <div className="text-xs text-slate truncate">
+                      {[d.jobFunction, d.seniority, d.location, d.followers ? `${d.followers.toLocaleString()} followers` : null]
+                        .filter(Boolean)
+                        .join(' · ') || '—'}
+                    </div>
                   </div>
                 </div>
                 {d.linkedin && (
@@ -133,6 +167,45 @@ export default function DecisionMakersTab({
                   </a>
                 )}
               </div>
+
+              {(d.summary || d.experience?.length || d.education?.length || d.skills?.length) && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => setExpanded((e) => ({ ...e, [rowKey(d)]: !e[rowKey(d)] }))}
+                    className="text-xs font-mono text-accent-soft hover:underline"
+                  >
+                    {expanded[rowKey(d)] ? 'Hide profile ▴' : 'Profile ▾'}
+                  </button>
+                  {expanded[rowKey(d)] && (
+                    <div className="mt-2 space-y-2 text-xs">
+                      {d.summary && <p className="text-cream-dim leading-relaxed line-clamp-4">{d.summary}</p>}
+                      {d.experience && d.experience.length > 0 && (
+                        <div>
+                          <div className="text-slate font-bold uppercase tracking-wide text-[0.6rem] mb-0.5">Experience</div>
+                          <ul className="text-cream-dim space-y-0.5">
+                            {d.experience.map((x, i) => <li key={i}>· {x}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {d.education && d.education.length > 0 && (
+                        <div>
+                          <div className="text-slate font-bold uppercase tracking-wide text-[0.6rem] mb-0.5">Education</div>
+                          <ul className="text-cream-dim space-y-0.5">
+                            {d.education.map((x, i) => <li key={i}>· {x}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {d.skills && d.skills.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {d.skills.map((s) => (
+                            <span key={s} className="badge badge-tag">{s}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-1.5 mt-2">
                 <Coverage ok={d.hasWorkEmail} label="Work email" />

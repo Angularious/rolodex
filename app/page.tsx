@@ -24,12 +24,12 @@ import { type TraceStep } from '@/components/OrchestrationTrace';
 import LoadingScreen from '@/components/graph/LoadingScreen';
 import { SAMPLE } from '@/components/graph/sample';
 
-// HUD + WebGL scene — client-only (three.js needs the browser).
-const GraphHUD = dynamic(() => import('@/components/graph/GraphHUD'), {
+// Circuit-schematic drill-down view — client-only (SVG-heavy, no SSR needed).
+const CircuitGraph = dynamic(() => import('@/components/circuit/CircuitGraph'), {
   ssr: false,
   loading: () => (
-    <div className="h-full w-full grid place-items-center bg-[#050608] font-mono text-xs text-muted">
-      initializing graph…
+    <div className="h-full w-full grid place-items-center bg-black font-mono text-xs text-[#5b6b82]">
+      initializing schematic…
     </div>
   ),
 });
@@ -484,8 +484,8 @@ export default function Home() {
                 <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
               </div>
             ) : view === 'graph' ? (
-              <div className="flex-1 min-h-[70vh] bg-[#050608]">
-                <GraphHUD
+              <div className="relative flex-1 min-h-[70vh] bg-black">
+                <CircuitGraph
                   data={{
                     domain: report.domain,
                     company: report.company,
@@ -495,6 +495,8 @@ export default function Home() {
                     decisionMakersLoading: report.decisionMakersLoading,
                     workforce: report.workforce,
                     workforceLoading: report.workforceLoading,
+                    employees: report.employees,
+                    employeesTotal: report.employeesTotal,
                   }}
                   onReveal={revealContact}
                   onSearchCompany={(d) => requestSearch(d)}

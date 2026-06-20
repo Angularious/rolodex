@@ -444,3 +444,12 @@ body {
   .gspace-orbit, .gspace-blink { animation: none; }
   .gspace-reveal { opacity: 1; animation: none; }
 }
+
+/* ---- Circuit-schematic view (self-contained; not part of the site theme) ---- */
+.circ-fade-in { animation: circ-fade 0.55s ease both; }
+@keyframes circ-fade { from { opacity: 0; } to { opacity: 1; } }
+.circ-chip { transition: opacity 0.15s; }
+.circ-chip:hover { opacity: 0.82; }
+@media (prefers-reduced-motion: reduce) {
+  .circ-fade-in { animation: none; }
+}

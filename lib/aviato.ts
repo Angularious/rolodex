@@ -104,6 +104,7 @@ export function mapAviatoFunding(
     amount: fmtMoney(r.moneyRaised),
     type: r.stage ?? null,
     investors: investorsOf(r),
+    valuation: fmtMoney(valuationOf(r)),
   }));
 
   const total = clean.reduce((s, r) => s + (r.moneyRaised ?? 0), 0);

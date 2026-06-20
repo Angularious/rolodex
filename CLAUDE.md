@@ -51,38 +51,38 @@ the user's keys; it's already gitignore'd so it never gets committed.
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
   Employees and Decision-makers tabs call `/api/reveal` per row.
-- **Graph View** (`components/graph/`) is the **default**, **full-screen** results view
-  (Table View = the tabs, toggled). It's a **true 3D force-directed network**
-  (`react-force-graph-3d`, the React binding of `3d-force-graph`; wraps three +
-  three-forcegraph + d3-force-3d), Palantir-Gotham-styled: **no ring/orbit math** —
-  positions come from the force sim only.
-  - `GraphHUD.tsx` = the **Palantir-Gotham HUD shell** (lazy-loaded via `next/dynamic`
-    `ssr:false`): left **legend** (category→color→count, click a row to toggle that
-    category's visibility) + icon **toolbar** (select active; **reset/fit-view** wired
-    to the graph's `resetView`), center viewport, right **entity inspector** (populates
-    on node click with real data; decision-maker **Enrich** reuses `revealContact`),
-    bottom **status strip** (LIVE · entities · relationships). Compass / focal crosshair
-    / mini-map are cosmetic overlays. On mobile the side panels collapse (right panel is
-    a drawer on select).
-  - `SpaceGraph.tsx` = the force graph inside the viewport (`react-force-graph-3d`,
-    `forwardRef` exposing `resetView`). Nodes = **soft glowing spheres** + additive halo
-    (bloom does the glow), sized by metric, colored per **5 categories** (people teal ·
-    departments blue · competitors purple · funding-rounds magenta · tech seafoam; company
-    = bright white, pinned at origin). Each category is a **starburst** (company→hub→
-    satellites) pulled to its own 3D **centroid** by a custom `d3Force('cluster', …)` →
-    volumetric clusters at varied depth. **UnrealBloomPass** glow (lazy-imported, guarded),
-    faint **radar rings** on the ground plane, idle **auto-rotate**, zoom capped
-    (`min/maxDistance`). Hover → styled tooltip; click → inspector (no camera move).
-    `graphData` + accessors are memoized/stable so the sim never re-heats (no flashing).
-  - `types.ts` = shared `GraphData`/`GNodeData` + the `Category` palette. `LoadingScreen.tsx`
-    = dedicated loader shown while a report streams (`!done`) — centered orbit + minimal
-    horizontal steps, **revealed sequentially** (`.gspace-reveal`). `sample.ts` powers
-    **`/?demo=1`** (free fixture preview — no `/api/search`, no credits; reveals stubbed).
-  - Fed by the **in-memory `Report`** (no new route/fetch — preserves cost discipline).
-    Page top bar = logo + compact search + Graph/Table toggle (text-only) + powered-by,
-    transparent over the graph. Blue accent scoped via `.graph-blue`; `.gspace-*` styles
-    in `globals.css`. **UI never names providers** — the inspector's Source row says
-    "Orthogonal", not the underlying API.
+- **Graph View** (`components/circuit/`) is the **default**, **full-screen** results view
+  (Table View = the tabs, toggled). It's a **circuit-schematic drill-down map** —
+  hand-laid-out **orthogonal SVG line-art**, NOT a force sim. **No Three.js / WebGL /
+  d3-force / react-force-graph** (those were removed — the old `components/graph/`
+  `GraphHUD.tsx`/`SpaceGraph.tsx` are deleted; the deps linger in `package.json` but
+  nothing imports them, so they don't bundle). Self-contained visual identity (pure
+  black, neon orthogonal traces, monospace, bracket-corner node frames) — deliberately
+  **not** the site's purple/retro theme.
+  - `CircuitGraph.tsx` (lazy `next/dynamic` `ssr:false`) renders the whole view: a
+    bracket-corner **root node** (chip-triangle glyph + company name + domain) at center,
+    **category "bus" boxes** fanning out on orthogonal trunks (double-line cardinals with
+    arrowheads; jogged verticals with via dots; clean L-routed diagonals), plus fixed HTML
+    chrome overlays that **don't pan**: top-left NETWORK OVERVIEW stat box (nodes/links/
+    buses/status from real counts), breadcrumb (`ROOT / <BUS>`), bottom-left LEGEND, footer
+    strip (system id from domain hash · generated ts · `RESEARCH // PUBLIC`).
+  - **Drill-down state machine:** root view shows only root + bus boxes (no clusters). Click
+    a bus → `focused` set, **CSS-transform camera** (`cameraFor`) pans+zooms toward that
+    branch, and ONLY that bus's cluster grid renders (others dim). Click a sub-node → right
+    **detail panel** slides in (terminal-style readout; decision-maker/employee **Enrich**
+    reuses `revealContact`). Click ROOT breadcrumb / root node → back to level 0. One
+    branch expanded at a time (avoids the old "too dense" problem).
+  - `geometry.ts` = **pure layout math** (no React): `buildBuses` (categories with data →
+    `Bus[]`; supports **N buses**, not hardcoded — decision-makers/departments/competitors/
+    employees on cardinals, tech/funding on diagonals), `busRect`/`trunk`/`grid`/`cameraFor`,
+    `CIRCUIT_COLOR` neon palette. Cluster grid is DEPTH(≤3)×SPAN chips with a rail + chevron
+    "data-flow" ticks; capped at 30 nodes (count label stays real). Coordinates live in a
+    fixed `1400×1400` viewBox; the camera transform (not free panning) drives navigation.
+  - Fed by the **in-memory `Report`** (no new route/fetch — preserves cost discipline) via
+    the `GraphData` shape in `components/graph/types.ts` (still used; now also carries
+    `employees`/`employeesTotal`). `components/graph/LoadingScreen.tsx` + `sample.ts`
+    (powers free **`/?demo=1`**) are retained. Animations are `.circ-*` in `globals.css`.
+    **UI never names providers** — the panel Source row says "Orthogonal".
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section

@@ -5,6 +5,14 @@ import type { Employee, RevealResult } from '@/lib/types';
 import { countryName } from '@/lib/format';
 import { useToast } from './Toast';
 import { SectionError } from './DepartmentsTab';
+import { Avatar } from './DecisionMakersTab';
+
+// "2025-02-01" → "Since 2025" for a compact tenure hint.
+function tenureLabel(startedAt?: string | null): string | null {
+  if (!startedAt) return null;
+  const year = startedAt.slice(0, 4);
+  return /^\d{4}$/.test(year) ? `Since ${year}` : null;
+}
 
 type SortKey = 'name' | 'seniority' | 'department';
 
@@ -255,8 +263,18 @@ export default function EmployeesTab({
             <tbody>
               {filtered.map((e, i) => (
                 <tr key={`${rowKey(e)}-${i}`}>
-                  <td className="font-bold">{e.fullName}</td>
-                  <td>{e.title || '—'}</td>
+                  <td className="font-bold">
+                    <div className="flex items-center gap-2">
+                      <Avatar src={e.photo} name={e.fullName} size={26} />
+                      {e.fullName}
+                    </div>
+                  </td>
+                  <td>
+                    {e.title || '—'}
+                    {tenureLabel(e.startedAt) && (
+                      <div className="text-[0.7rem] text-slate font-normal">{tenureLabel(e.startedAt)}</div>
+                    )}
+                  </td>
                   <td>{e.department || '—'}</td>
                   <td>{e.seniority || '—'}</td>
                   <td>
@@ -284,16 +302,21 @@ export default function EmployeesTab({
         {filtered.map((e, i) => (
           <div key={`${rowKey(e)}-${i}`} className="retro-panel-flat p-3">
             <div className="flex justify-between items-start gap-2">
-              <div className="font-bold">{e.fullName}</div>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Avatar src={e.photo} name={e.fullName} size={34} />
+                <div className="min-w-0">
+                  <div className="font-bold truncate">{e.fullName}</div>
+                  <div className="text-sm text-slate truncate">{e.title || '—'}</div>
+                </div>
+              </div>
               {e.linkedin && (
-                <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-accent-soft font-display">
+                <a href={e.linkedin} target="_blank" rel="noreferrer" className="text-accent-soft font-display shrink-0">
                   in↗
                 </a>
               )}
             </div>
-            <div className="text-sm text-slate">{e.title || '—'}</div>
-            <div className="text-xs text-slate mb-2">
-              {[e.department, e.seniority, e.country].filter(Boolean).join(' · ') || '—'}
+            <div className="text-xs text-slate mb-2 mt-1">
+              {[e.department, e.seniority, e.country, tenureLabel(e.startedAt)].filter(Boolean).join(' · ') || '—'}
             </div>
             <EmailCell e={e} />
           </div>
