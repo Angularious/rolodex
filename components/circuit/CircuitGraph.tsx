@@ -81,11 +81,22 @@ function Chip({ cx, cy, color }: { cx: number; cy: number; color: string }) {
 function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number; color: string; node: SubNode; active: boolean; onClick: () => void }) {
   const S = 52;
   const label = node.label.length > 16 ? node.label.slice(0, 15) + '…' : node.label;
+  const photo = node.person?.photo ?? node.employee?.photo ?? null;
   return (
     <g style={{ cursor: 'pointer' }} onClick={onClick} className="circ-chip">
       <rect x={x - S / 2} y={y - S / 2} width={S} height={S} fill={active ? color : '#05070b'} opacity={active ? 0.16 : 0.9} />
       <Corners x={x - S / 2} y={y - S / 2} w={S} h={S} len={11} color={color} sw={active ? 2.4 : 1.6} />
-      <Chip cx={x} cy={y} color={color} />
+      {photo ? (
+        <g>
+          <defs>
+            <clipPath id={`cp-${node.id}`}><circle cx={x} cy={y} r={18} /></clipPath>
+          </defs>
+          <image href={photo} x={x - 18} y={y - 18} width={36} height={36} clipPath={`url(#cp-${node.id})`} preserveAspectRatio="xMidYMid slice" />
+          <circle cx={x} cy={y} r={18} fill="none" stroke={color} strokeWidth={1.2} opacity={0.6} />
+        </g>
+      ) : (
+        <Chip cx={x} cy={y} color={color} />
+      )}
       <text x={x} y={y + S / 2 + 16} textAnchor="middle" fontFamily={FONT} fontSize={12} fill={TRACE} opacity={0.85}>
         {label}
       </text>
@@ -119,18 +130,6 @@ export default function CircuitGraph({
     return { nodes, links, buses: buses.length };
   }, [buses]);
 
-  const sysId = useMemo(() => {
-    let h = 0;
-    for (const c of data.domain) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    return `SYS-${h.toString(36).toUpperCase().slice(0, 4)}-${(h % 97).toString().padStart(2, '0')}`;
-  }, [data.domain]);
-
-  const generated = useMemo(() => {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} UTC`;
-  }, []);
-
   const reset = useCallback(() => {
     setFocused(null);
     setSelected(null);
@@ -158,7 +157,7 @@ export default function CircuitGraph({
   const rootLabel = company?.name || data.domain;
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black text-white" style={{ fontFamily: FONT }}>
+    <div className="absolute inset-0 overflow-hidden bg-black/85 text-white" style={{ fontFamily: FONT }}>
       {/* ---------------- schematic ---------------- */}
       <svg viewBox={`0 0 ${VIEW} ${VIEW}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full">
         <defs>
@@ -255,7 +254,7 @@ export default function CircuitGraph({
 
       {/* ---------------- chrome overlays (fixed, do not pan) ---------------- */}
       {/* top-left: title + overview */}
-      <div className="absolute top-5 left-6 select-none">
+      <div className="absolute top-5 left-6 select-none pointer-events-none">
         <div className="text-[0.7rem] tracking-[0.32em] text-[#5b6b82]">RELATIONSHIP MAP</div>
         <div className="text-2xl tracking-wide text-white mt-1 mb-3">{rootLabel}</div>
         <div className="border w-[260px]" style={{ borderColor: '#1c2940' }}>
@@ -283,24 +282,6 @@ export default function CircuitGraph({
         )}
       </div>
 
-      {/* bottom-left: legend */}
-      <div className="absolute bottom-16 left-6 border w-[230px] select-none" style={{ borderColor: '#1c2940' }}>
-        <div className="px-4 py-3">
-          <div className="text-[0.66rem] tracking-[0.28em] text-[#5b6b82] mb-3">LEGEND</div>
-          <LegendRow label="CENTRAL ENTITY" />
-          <LegendRow label="CATEGORY NODE" />
-          <LegendRow label="CLUSTER NODE" />
-          <LegendRow label="DATA LINK" />
-        </div>
-      </div>
-
-      {/* bottom footer strip */}
-      <div className="absolute bottom-0 inset-x-0 border-t flex flex-wrap items-center gap-x-10 gap-y-1 px-6 py-2.5 text-[0.66rem] tracking-[0.18em] bg-black/80" style={{ borderColor: '#1c2940' }}>
-        <span className="text-[#5b6b82]">SYSTEM ID <span className="text-[#22d3ee] ml-2">{sysId}</span></span>
-        <span className="text-[#5b6b82]">MAP GENERATED <span className="text-[#8aa0bd] ml-2">{generated}</span></span>
-        <span className="text-[#5b6b82]">CLASSIFICATION <span className="text-[#ec4899] ml-2">RESEARCH // PUBLIC</span></span>
-      </div>
-
       {/* right detail panel */}
       <DetailPanel
         selected={selected}
@@ -318,17 +299,6 @@ function StatRow({ k, v, accent }: { k: string; v: string; accent: string }) {
     <div className="flex justify-between items-baseline py-1 text-[0.78rem]">
       <span style={{ color: accent }}>{k}</span>
       <span className="text-[#cfdcea]">{v}</span>
-    </div>
-  );
-}
-
-function LegendRow({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-3 py-1.5 text-[0.7rem] text-[#8aa0bd]">
-      <svg width="22" height="22" viewBox="0 0 22 22">
-        <path d="M 2 7 L 2 2 L 7 2 M 15 2 L 20 2 L 20 7 M 20 15 L 20 20 L 15 20 M 7 20 L 2 20 L 2 15" stroke="#8aa0bd" strokeWidth="1.4" fill="none" />
-      </svg>
-      <span className="tracking-[0.16em]">{label}</span>
     </div>
   );
 }
@@ -391,7 +361,7 @@ function DetailPanel({
 
   return (
     <div
-      className="absolute top-0 right-0 h-full w-[360px] max-w-[92%] bg-black/95 backdrop-blur-sm border-l overflow-y-auto"
+      className="fixed sm:absolute inset-0 sm:inset-auto sm:top-0 sm:right-0 sm:h-full sm:w-[360px] z-50 bg-black/98 sm:bg-black/95 backdrop-blur-sm border-t sm:border-t-0 sm:border-l overflow-y-auto"
       style={{
         borderColor: '#1c2940',
         transform: open ? 'translateX(0)' : 'translateX(100%)',
@@ -491,7 +461,7 @@ function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; 
     <div>
       {person.photo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={person.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-14 h-14 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
+        <img src={person.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
       )}
       <PRow k="TITLE" v={person.title} />
       <PRow k="FUNCTION" v={person.jobFunction} />
@@ -533,7 +503,7 @@ function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: strin
     <div>
       {emp.photo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={emp.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-14 h-14 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
+        <img src={emp.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
       )}
       <PRow k="TITLE" v={emp.title} />
       <PRow k="DEPARTMENT" v={emp.department} />

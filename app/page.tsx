@@ -342,9 +342,9 @@ export default function Home() {
 
   return (
     <ToastProvider>
-      {/* Dot-field background — hidden in the graph/loading view, which has its
-          own starfield on a near-black canvas (else the field bleeds through). */}
-      {!graphFull && <FieldBackground theme="purple" />}
+      {/* Dot-field background — dimmed in graph/loading view so the schematic
+          canvas shows through without the field competing. */}
+      <FieldBackground theme="blue" className={graphFull ? 'opacity-30' : ''} />
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
@@ -358,64 +358,72 @@ export default function Home() {
             graphFull ? 'bg-transparent' : 'border-b border-line bg-ink/70 backdrop-blur-md'
           }`}
         >
-          <div className={`${showReport ? 'px-6' : 'mx-auto max-w-6xl px-5'} h-[56px] flex items-center gap-4 sm:gap-6`}>
-            <button
-              onClick={reset}
-              className="font-display text-base tracking-tight flex items-center gap-2 text-cream shrink-0"
-            >
-              <span className="text-accent">◇</span>
-              <span className="hidden sm:inline">COMPANY ROLODEX</span>
-            </button>
+          <div className={`${showReport ? 'px-6' : 'mx-auto max-w-6xl px-5'} h-[56px] flex items-center gap-4`}>
+            {/* Left col: logo */}
+            <div className="shrink-0">
+              <button
+                onClick={reset}
+                className="font-display text-base tracking-tight flex items-center gap-2 text-cream"
+              >
+                <span className="text-accent">◇</span>
+                <span className="hidden sm:inline">COMPANY ROLODEX</span>
+              </button>
+            </div>
 
-            {showReport && (
-              <form onSubmit={onSubmit} className="flex-1 min-w-0 max-w-xl flex items-center gap-2">
-                <input
-                  className="retro-input border-line bg-card py-1.5 text-sm focus:shadow-none"
-                  placeholder="company domain or name"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  spellCheck={false}
-                />
-                <button
-                  type="submit"
-                  disabled={status === 'searching'}
-                  className="retro-btn retro-btn-blue retro-btn-sm whitespace-nowrap"
-                >
-                  {status === 'searching' ? 'Scanning…' : 'Run →'}
-                </button>
-              </form>
-            )}
+            {/* Center col: search form (results only) */}
+            <div className="flex-1 min-w-0 flex justify-center">
+              {showReport && (
+                <form onSubmit={onSubmit} className="w-full max-w-lg flex items-center gap-2">
+                  <input
+                    className="retro-input border-line bg-card py-1.5 text-sm focus:shadow-none"
+                    placeholder="company domain or name"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <button
+                    type="submit"
+                    disabled={status === 'searching'}
+                    className="retro-btn retro-btn-blue retro-btn-sm whitespace-nowrap"
+                  >
+                    {status === 'searching' ? 'Scanning…' : 'Run →'}
+                  </button>
+                </form>
+              )}
+            </div>
 
-            {showReport && done && (
-              <div className="flex items-center gap-5 shrink-0">
-                <button
-                  onClick={() => setView('graph')}
-                  className={`font-mono text-sm tracking-wide transition-colors ${
-                    view === 'graph' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
-                  }`}
-                >
-                  ◈ Graph
-                </button>
-                <button
-                  onClick={() => setView('table')}
-                  className={`font-mono text-sm tracking-wide transition-colors ${
-                    view === 'table' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
-                  }`}
-                >
-                  ▦ Table
-                </button>
-              </div>
-            )}
-
-            <a
-              href="https://orthogonal.com"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
-              className={`${showReport ? 'shrink-0' : 'ml-auto'} font-mono text-[0.62rem] uppercase tracking-[0.16em] rounded-full border border-line px-2.5 py-1 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors whitespace-nowrap`}
-            >
-              <span className="hidden md:inline">Powered by </span>orthogonal.com ↗
-            </a>
+            {/* Right col: graph/table toggles + powered-by link */}
+            <div className="shrink-0 flex items-center gap-3 sm:gap-4">
+              {showReport && done && (
+                <>
+                  <button
+                    onClick={() => setView('graph')}
+                    className={`font-mono text-sm tracking-wide transition-colors ${
+                      view === 'graph' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
+                    }`}
+                  >
+                    ◈ Graph
+                  </button>
+                  <button
+                    onClick={() => setView('table')}
+                    className={`font-mono text-sm tracking-wide transition-colors ${
+                      view === 'table' ? 'text-accent-soft' : 'text-cream-dim hover:text-cream'
+                    }`}
+                  >
+                    ▦ Table
+                  </button>
+                </>
+              )}
+              <a
+                href="https://orthogonal.com"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
+                className={`${!showReport ? 'ml-auto' : ''} font-mono text-[0.62rem] uppercase tracking-[0.16em] rounded-full border border-line px-2.5 py-1 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors whitespace-nowrap`}
+              >
+                <span className="hidden md:inline">Powered by </span>orthogonal.com ↗
+              </a>
+            </div>
           </div>
         </header>
 

@@ -77,13 +77,14 @@ const CAT_TITLE: Record<CircuitCat, string> = {
   funding: 'FUNDING',
 };
 
-// Preferred slot per category — the core four land on the cardinals exactly like
-// the reference; tech/funding take the diagonals when present.
+// Preferred slot per category — the core four land on the cardinals; tech/funding
+// take the diagonals. departments→left, employees→right avoids squishing with
+// the diagonal slots.
 const CAT_SLOT: Record<CircuitCat, SlotName> = {
-  decisionMakers: 'right',
-  departments: 'top',
-  competitors: 'left',
-  employees: 'bottom',
+  decisionMakers: 'top',
+  departments: 'left',
+  competitors: 'bottom',
+  employees: 'right',
   tech: 'topRight',
   funding: 'bottomLeft',
 };

@@ -16,12 +16,12 @@
   --card: rgba(255, 255, 255, 0.035);
   --card-hover: rgba(255, 255, 255, 0.06);
 
-  /* --- accent (violet) --- */
-  --accent: #8b3cff;
-  --accent-soft: #b48cff;
-  --accent-faint: #ece0ff;
-  --accent-ring: rgba(139, 60, 255, 0.28);
-  --accent-sel: rgba(139, 60, 255, 0.32);
+  /* --- accent (blue) --- */
+  --accent: #2563eb;
+  --accent-soft: #60a5fa;
+  --accent-faint: #dbeafe;
+  --accent-ring: rgba(37, 99, 235, 0.28);
+  --accent-sel: rgba(37, 99, 235, 0.32);
 }
 
 /* Drop shadow that keeps text readable over the bright crest of the field. */
@@ -381,14 +381,6 @@ body {
 }
 
 /* ------------------------------------------------- graph view (space / 3D) */
-/* Blue accent, scoped to the graph so the rest of the app keeps its purple. */
-.graph-blue {
-  --accent: #3c6dff;
-  --accent-soft: #7aa8ff;
-  --accent-faint: #d8e3ff;
-  --accent-ring: rgba(60, 109, 255, 0.3);
-  --accent-sel: rgba(60, 109, 255, 0.32);
-}
 /* Billboard labels rendered over the WebGL scene (drei <Html>). */
 .gspace-label {
   background: rgba(8, 12, 24, 0.92);
