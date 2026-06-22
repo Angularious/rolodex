@@ -14,6 +14,19 @@ export function dailyCapUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 20;
 }
 
+// Per-visitor daily spend sub-cap (USD). Bounds how much of the global cap any
+// single IP can consume in a day, so one actor (or a script) can't drain it.
+// A whole NAT'd network shares one IP, so keep this generous enough for an
+// office/classroom; the per-session cookie budget (lib/session.ts) is the
+// finer, NAT-friendly guard. Set PER_IP_DAILY_USD <= 0 (or unset) to disable.
+export function perIpDailyCapUsd(): number | null {
+  const raw = process.env.PER_IP_DAILY_USD;
+  // Default $5 — one IP can't take more than ~25% of a $20 global cap, so a
+  // single actor can't drain it, while leaving room for a few searches+reveals.
+  const n = parseFloat(raw == null || raw === '' ? '5' : raw);
+  return Number.isFinite(n) && n > 0 ? n : null; // <=0 disables the per-IP cap
+}
+
 export interface SpendStatus {
   spent: number;
   cap: number;
@@ -50,35 +63,49 @@ export async function getSpendStatus(): Promise<SpendStatus> {
  * Local dev (no Supabase): always allowed, no cap. On a DB error we fail CLOSED
  * (deny) — this is the money guard.
  */
-export async function reserveSpend(estimateUsd: number): Promise<{ allowed: boolean }> {
-  if (!supabaseConfigured()) return { allowed: true }; // local dev: no cap
+export type ReserveReason = 'ok' | 'global' | 'perip';
+
+export async function reserveSpend(
+  estimateUsd: number,
+  ipHash?: string,
+): Promise<{ allowed: boolean; reason: ReserveReason }> {
+  if (!supabaseConfigured()) return { allowed: true, reason: 'ok' }; // local dev: no cap
   const sb = getSupabase();
-  if (!sb) return { allowed: true };
+  if (!sb) return { allowed: true, reason: 'ok' };
   const estimate = Math.round(estimateUsd * 100) / 100;
+  const ipCap = perIpDailyCapUsd();
   const { data, error } = await sb.rpc('reserve_spend', {
     p_estimate: estimate,
     p_cap: dailyCapUsd(),
     p_site: SITE_ID,
+    // Only enforce the per-IP sub-cap when both an IP and a cap are present.
+    p_ip: ipCap != null ? ipHash ?? null : null,
+    p_ip_cap: ipCap,
   });
   if (error) {
     console.error('[spend.reserve]', error.message);
-    return { allowed: false }; // fail closed
+    return { allowed: false, reason: 'global' }; // fail closed
   }
-  const res = data as { allowed?: boolean } | null;
-  return { allowed: Boolean(res?.allowed) };
+  const res = data as { allowed?: boolean; reason?: ReserveReason } | null;
+  return { allowed: Boolean(res?.allowed), reason: res?.reason ?? 'global' };
 }
 
 /**
  * Reconcile a reservation once the real cost is known. Pass `actual - estimate`
  * (usually negative — we reserved worst-case). Adds a correcting row so the
- * ledger nets to the true spend. A no-op when the delta rounds to zero.
+ * ledger nets to the true spend, tagged with the SAME ipHash as the reservation
+ * so the per-IP daily sum stays correct. A no-op when the delta rounds to zero.
  */
-export async function reconcileSpend(deltaUsd: number): Promise<void> {
+export async function reconcileSpend(deltaUsd: number, ipHash?: string): Promise<void> {
   if (!supabaseConfigured()) return;
   const sb = getSupabase();
   if (!sb) return;
   const delta = Math.round(deltaUsd * 100) / 100;
   if (delta === 0) return;
-  const { error } = await sb.rpc('record_spend', { p_cost: delta, p_site: SITE_ID });
+  const { error } = await sb.rpc('record_spend', {
+    p_cost: delta,
+    p_site: SITE_ID,
+    p_ip: ipHash ?? null,
+  });
   if (error) console.error('[spend.reconcile]', error.message);
 }

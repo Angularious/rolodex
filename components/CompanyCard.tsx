@@ -10,6 +10,9 @@ const SOCIAL_META: { key: keyof Company['socials']; label: string; icon: string 
   { key: 'github', label: 'GitHub', icon: '⌥' },
   { key: 'instagram', label: 'Instagram', icon: '◉' },
   { key: 'youtube', label: 'YouTube', icon: '▶' },
+  { key: 'crunchbase', label: 'Crunchbase', icon: 'cb' },
+  { key: 'angellist', label: 'AngelList', icon: 'a' },
+  { key: 'g2', label: 'G2', icon: 'G2' },
 ];
 
 function Stat({ label, value }: { label: string; value?: string | null }) {
@@ -104,12 +107,29 @@ export default function CompanyCard({ company }: { company: Company }) {
         <Stat label="HQ" value={company.hqLocation} />
         <Stat label="Total funding" value={company.fundingTotal} />
         <Stat label="Ticker" value={company.stockSymbol} />
+        <Stat label="Phone" value={company.phone} />
       </div>
+
+      {company.keywords && company.keywords.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-line">
+          <div className="text-[0.65rem] uppercase tracking-wide text-slate font-bold mb-1">
+            Keywords
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {company.keywords.map((k) => (
+              <span key={k} className="badge badge-slate">
+                {k}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {rounds.length > 0 && (
         <div className="mt-4 pt-3 border-t border-line">
           <div className="text-[0.65rem] uppercase tracking-wide text-slate font-bold mb-2">
             Funding {company.fundingStage ? `· ${company.fundingStage.replace(/_/g, ' ')}` : ''}
+            {company.fundingDate ? ` · last ${company.fundingDate}` : ''}
           </div>
           <div className="flex flex-col gap-1.5">
             {rounds.slice(0, 8).map((r, i) => (
@@ -118,7 +138,10 @@ export default function CompanyCard({ company }: { company: Company }) {
                 className="flex items-baseline justify-between gap-3 text-sm"
               >
                 <span className="font-bold whitespace-nowrap">{r.type || 'Round'}</span>
-                <span className="font-mono text-accent-soft whitespace-nowrap">{r.amount || '—'}</span>
+                <span className="font-mono text-accent-soft whitespace-nowrap">
+                  {r.amount || '—'}
+                  {r.valuation ? <span className="text-slate"> @ {r.valuation}</span> : null}
+                </span>
                 <span className="text-slate text-xs truncate flex-1 text-right">
                   {[r.date ? r.date.slice(0, 10) : null, r.investors].filter(Boolean).join(' · ')}
                 </span>

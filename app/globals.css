@@ -16,12 +16,12 @@
   --card: rgba(255, 255, 255, 0.035);
   --card-hover: rgba(255, 255, 255, 0.06);
 
-  /* --- accent (violet) --- */
-  --accent: #8b3cff;
-  --accent-soft: #b48cff;
-  --accent-faint: #ece0ff;
-  --accent-ring: rgba(139, 60, 255, 0.28);
-  --accent-sel: rgba(139, 60, 255, 0.32);
+  /* --- accent (blue) --- */
+  --accent: #2563eb;
+  --accent-soft: #60a5fa;
+  --accent-faint: #dbeafe;
+  --accent-ring: rgba(37, 99, 235, 0.28);
+  --accent-sel: rgba(37, 99, 235, 0.32);
 }
 
 /* Drop shadow that keeps text readable over the bright crest of the field. */
@@ -379,3 +379,80 @@ body {
   background: var(--line-strong);
   border-radius: 999px;
 }
+
+/* ------------------------------------------------- graph view (space / 3D) */
+/* Billboard labels rendered over the WebGL scene (drei <Html>). */
+.gspace-label {
+  background: rgba(8, 12, 24, 0.92);
+  border: 1px solid var(--accent-ring);
+  padding: 4px 8px;
+  white-space: nowrap;
+  font-family: var(--font-mono), monospace;
+  transform: translateY(-140%);
+}
+.gspace-label-name { color: #f2efe8; font-size: 12px; line-height: 1.2; }
+.gspace-label-sub { color: #9fb6e8; font-size: 10px; }
+.gspace-hub {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.95);
+}
+.gspace-sun {
+  font-family: var(--font-display), sans-serif;
+  color: #eaf1ff;
+  font-size: 15px;
+  white-space: nowrap;
+  text-shadow: 0 0 10px rgba(60, 109, 255, 0.65);
+}
+/* Loading screen: orbiting "system" animation. */
+.gspace-loader { position: relative; width: 124px; height: 124px; }
+.gspace-core {
+  position: absolute; top: 50%; left: 50%; width: 18px; height: 18px; margin: -9px;
+  border-radius: 50%; background: var(--accent-soft); box-shadow: 0 0 22px var(--accent);
+}
+.gspace-orbit {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  border: 1px solid rgba(122, 168, 255, 0.22); border-radius: 50%;
+}
+.gspace-orbit-1 { width: 60px; height: 60px; animation: gorbit 3s linear infinite; }
+.gspace-orbit-2 { width: 90px; height: 90px; animation: gorbit 5s linear infinite reverse; }
+.gspace-orbit-3 { width: 124px; height: 124px; animation: gorbit 8s linear infinite; }
+.gspace-dot {
+  position: absolute; top: -3px; left: 50%; width: 6px; height: 6px; margin-left: -3px;
+  border-radius: 50%; background: var(--accent-soft); box-shadow: 0 0 8px var(--accent);
+}
+.gspace-blink { animation: gpulse 1.2s ease-in-out infinite; }
+/* Loading checklist: each card reveals one at a time (staggered entrance). */
+.gspace-reveal { opacity: 0; animation: greveal 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+@keyframes greveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes gorbit { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes gpulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .gspace-orbit, .gspace-blink { animation: none; }
+  .gspace-reveal { opacity: 1; animation: none; }
+}
+
+/* ---- Circuit-schematic view (self-contained; not part of the site theme) ---- */
+.circ-fade-in { animation: circ-fade 0.55s ease both; }
+@keyframes circ-fade { from { opacity: 0; } to { opacity: 1; } }
+.circ-chip { transition: opacity 0.15s; }
+.circ-chip:hover { opacity: 0.82; }
+/* Pulsing border glow for summary-view skeleton loading */
+.circ-pulse { animation: circ-pulse-anim 1.6s ease-in-out infinite; }
+@keyframes circ-pulse-anim {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.65; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .circ-fade-in { animation: none; }
+  .circ-pulse { animation: none; opacity: 0.5; }
+}
+
+/* Hide scrollbar while keeping scroll functional (tab row) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

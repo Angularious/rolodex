@@ -18,6 +18,13 @@ interface RawDecisionMakerProfile {
   country?: string | null;
   seniority?: string | null;
   job_function?: string | null;
+  industry?: string | null;
+  summary?: string | null;
+  followers?: number | null;
+  profile_picture_url?: string | null;
+  skills?: string[] | null;
+  experience?: string[] | null;
+  education?: string[] | null;
   contact_availability?: {
     work_email?: boolean | null;
     personal_email?: boolean | null;
@@ -94,6 +101,13 @@ export function mapDecisionMakers(raw: RawDecisionMakers): DecisionMaker[] {
       seniority: p.seniority ?? null,
       jobFunction: p.job_function ?? null,
       linkedin,
+      photo: p.profile_picture_url ?? null,
+      summary: p.summary ?? null,
+      followers: typeof p.followers === 'number' ? p.followers : null,
+      industry: p.industry ?? null,
+      skills: (p.skills ?? []).filter(Boolean).slice(0, 12),
+      experience: (p.experience ?? []).filter(Boolean).slice(0, 5),
+      education: (p.education ?? []).filter(Boolean).slice(0, 3),
       hasWorkEmail: Boolean(ca.work_email),
       hasPersonalEmail: Boolean(ca.personal_email),
       hasPhone: Boolean(ca.phone),

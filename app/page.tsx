@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { readSearchStream } from '@/lib/stream';
 import { normalizeInput } from '@/lib/normalize';
 import type {
@@ -19,7 +19,22 @@ import EmployeesTab from '@/components/EmployeesTab';
 import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
-import OrchestrationTrace, { type TraceStep } from '@/components/OrchestrationTrace';
+import dynamic from 'next/dynamic';
+import { type TraceStep } from '@/components/OrchestrationTrace';
+import LoadingScreen from '@/components/graph/LoadingScreen';
+import { SAMPLE } from '@/components/graph/sample';
+import SummaryView from '@/components/SummaryView';
+import { CIRCUIT_COLOR } from '@/components/circuit/geometry';
+
+// Circuit-schematic drill-down view — client-only (SVG-heavy, no SSR needed).
+const CircuitGraph = dynamic(() => import('@/components/circuit/CircuitGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full grid place-items-center bg-black font-mono text-xs text-[#5b6b82]">
+      initializing schematic…
+    </div>
+  ),
+});
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
@@ -141,8 +156,59 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>('employees');
   const [forcedDept, setForcedDept] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [view, setView] = useState<'graph' | 'summary' | 'table'>('graph');
+
+  // Persist view choice; default to summary on mobile, graph on desktop.
+  useEffect(() => {
+    const saved = localStorage.getItem('rolodex:view') as 'graph' | 'summary' | 'table' | null;
+    if (saved === 'graph' || saved === 'summary' || saved === 'table') {
+      setView(saved);
+    } else if (window.innerWidth < 768) {
+      setView('summary');
+    }
+  }, []);
+
+  const switchView = useCallback((v: 'graph' | 'summary' | 'table') => {
+    setView(v);
+    localStorage.setItem('rolodex:view', v);
+  }, []);
 
   const inFlight = useRef(false);
+  const demoRef = useRef(false);
+
+  // Free UI preview: `/?demo=1` loads a static fixture — no /api/search, no
+  // credits. Reveals are stubbed below so clicking Enrich is free too.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('demo')) return;
+    demoRef.current = true;
+    setInput(SAMPLE.domain);
+    setReport({
+      domain: SAMPLE.domain,
+      inputEcho: SAMPLE.domain,
+      resolvedFrom: null,
+      company: SAMPLE.company,
+      companyError: false,
+      workforce: SAMPLE.workforce,
+      workforceLoading: false,
+      workforceError: false,
+      competitors: SAMPLE.competitors,
+      competitorsLoading: false,
+      competitorsError: false,
+      employees: SAMPLE.employees,
+      employeesTotal: SAMPLE.employees.length,
+      employeesLoading: false,
+      employeesError: false,
+      decisionMakers: SAMPLE.decisionMakers,
+      decisionMakersLoading: false,
+      decisionMakersError: false,
+      cost: 0,
+      durationMs: 0,
+    });
+    setStatus('ready');
+    setDone(true);
+    // demo respects the same mobile-default logic as live searches
+  }, []);
 
   const doSearch = useCallback(
     async (value: string) => {
@@ -261,6 +327,10 @@ export default function Home() {
   // On-demand email/phone reveal for one person (tiered server-side).
   const revealContact = useCallback(
     async (payload: { ceId?: string | null; linkedin?: string | null }): Promise<RevealResult> => {
+      // Demo mode: never hit the paid reveal route.
+      if (demoRef.current) {
+        return { email: 'demo.contact@hyperion.demo', phone: '+1 555-0142', source: 'company-enrich' };
+      }
       const res = await fetch('/api/reveal', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -283,53 +353,91 @@ export default function Home() {
   };
 
   const showReport = (status === 'searching' || status === 'ready') && report;
+  // Full-bleed canvas for graph + loading screen. Summary gets its own full-width but scrollable layout.
+  const graphFull = !!showReport && (view === 'graph' || !done);
+  const summaryFull = !!showReport && done && view === 'summary';
 
   return (
     <ToastProvider>
-      {/* Animated dot-field background + legibility scrim */}
-      <FieldBackground />
+      {/* Dot-field background — dimmed in graph/loading view so the schematic
+          canvas shows through without the field competing. */}
+      <FieldBackground theme="blue" className={graphFull ? 'opacity-55' : ''} />
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
       />
 
       <div className="min-h-screen flex flex-col">
-        {/* Header */}
-        <header className="sticky top-0 z-30 border-b border-line bg-ink/70 backdrop-blur-md">
-          <div className="mx-auto max-w-6xl px-5 h-[54px] flex items-center justify-between">
-            <button
-              onClick={reset}
-              className="font-display text-base sm:text-lg tracking-tight flex items-center gap-2 text-cream"
-            >
-              <span className="text-accent">◇</span> COMPANY ROLODEX
-            </button>
-            <a
-              href="https://orthogonal.com"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
-              className="font-mono text-[0.7rem] uppercase tracking-[0.18em] rounded-full border border-line px-3 py-1.5 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors"
-            >
-              Powered by orthogonal.com ↗
-            </a>
+        {/* Header — always translucent glass so the animated dot field shows through.
+            Circuit-themed: subtle neon bottom trace. */}
+        <header className="sticky top-0 z-30 bg-black/25 backdrop-blur-md border-b border-[#22d3ee]/12">
+          <div className={`${showReport ? 'px-6' : 'mx-auto max-w-6xl px-5'} h-[56px] flex items-center gap-4`}>
+            {/* Left col: logo */}
+            <div className="shrink-0">
+              <button
+                onClick={reset}
+                className="font-display text-base tracking-tight flex items-center gap-2 text-cream"
+              >
+                <span className="text-accent">◇</span>
+                <span className="hidden sm:inline">COMPANY ROLODEX</span>
+              </button>
+            </div>
+
+            {/* Center col: search form (results only) */}
+            <div className="flex-1 min-w-0 flex justify-center">
+              {showReport && (
+                <form onSubmit={onSubmit} className="w-full max-w-lg flex items-center gap-2">
+                  <input
+                    className="retro-input border-line bg-card py-1.5 text-sm focus:shadow-none"
+                    placeholder="company domain or name"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <button
+                    type="submit"
+                    disabled={status === 'searching'}
+                    className="retro-btn retro-btn-blue retro-btn-sm whitespace-nowrap"
+                  >
+                    {status === 'searching' ? 'Scanning…' : 'Run →'}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Right col: powered-by link (view toggle is the floating button) */}
+            <div className="shrink-0 flex items-center gap-2 sm:gap-4">
+              <a
+                href="https://orthogonal.com"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
+                className="font-mono text-[0.62rem] uppercase tracking-[0.16em] rounded-full border border-line px-2.5 py-1 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors whitespace-nowrap"
+              >
+                <span className="hidden md:inline">Powered by </span>orthogonal.com ↗
+              </a>
+            </div>
           </div>
         </header>
 
-        <main className="mx-auto max-w-6xl w-full px-4 flex-1">
-          {/* Search */}
-          <section className={`text-center ${status === 'idle' ? 'py-20 sm:py-28' : 'py-8'}`}>
-            {status === 'idle' && (
-              <>
-                <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
-                <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
-                  Company <em>Rolodex</em>
-                </h1>
-                <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
-                  Type a company domain or name. Get an instant intelligence report — profile,
-                  departments, locations, competitors, and people.
-                </p>
-              </>
-            )}
+        <main
+          className={
+            graphFull ? 'w-full flex-1 flex flex-col'
+            : summaryFull ? 'w-full flex-1'
+            : 'mx-auto max-w-6xl w-full px-4 flex-1'
+          }
+        >
+          {/* Search — landing only; in results it lives in the header bar */}
+          {status === 'idle' && (
+            <section className="text-center py-20 sm:py-28">
+              <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
+              <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
+                Company <em>Rolodex</em>
+              </h1>
+              <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
+                Type a company domain or name. Get an instant intelligence report — profile,
+                departments, locations, competitors, and people.
+              </p>
 
             <form
               onSubmit={onSubmit}
@@ -343,12 +451,8 @@ export default function Home() {
                 autoFocus
                 spellCheck={false}
               />
-              <button
-                type="submit"
-                className="retro-btn retro-btn-blue whitespace-nowrap"
-                disabled={status === 'searching'}
-              >
-                {status === 'searching' ? 'Scanning…' : 'Run report →'}
+              <button type="submit" className="retro-btn retro-btn-blue whitespace-nowrap">
+                Run report →
               </button>
             </form>
 
@@ -370,30 +474,65 @@ export default function Home() {
               </div>
             )}
           </section>
+          )}
 
           {/* Error */}
           {status === 'error' && error && <ErrorScreen error={error} onReset={reset} />}
 
-          {/* Report */}
-          {showReport && report && (
-            <section>
-              {report.resolvedFrom && (
-                <div className="text-white/90 text-sm mb-1">
-                  Resolved <b>{report.resolvedFrom}</b> → <b>{report.domain}</b>
+          {/* Report — loading screen, then full-bleed graph, summary, or table view */}
+          {showReport &&
+            report &&
+            (!done ? (
+              <div className="flex-1 relative">
+                <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
+              </div>
+            ) : view === 'graph' ? (
+              <div className="relative flex-1 min-h-[calc(100dvh-56px)] bg-transparent">
+                <CircuitGraph
+                  data={{
+                    domain: report.domain,
+                    company: report.company,
+                    competitors: report.competitors,
+                    competitorsLoading: report.competitorsLoading,
+                    decisionMakers: report.decisionMakers,
+                    decisionMakersLoading: report.decisionMakersLoading,
+                    workforce: report.workforce,
+                    workforceLoading: report.workforceLoading,
+                    employees: report.employees,
+                    employeesTotal: report.employeesTotal,
+                  }}
+                  onReveal={revealContact}
+                  onSearchCompany={(d) => requestSearch(d)}
+                  onSwitchToTable={() => switchView('summary')}
+                />
+              </div>
+            ) : view === 'summary' ? (
+              <section className="w-full">
+                <SummaryView
+                  data={{
+                    domain: report.domain,
+                    company: report.company,
+                    companyError: report.companyError,
+                    workforce: report.workforce,
+                    workforceLoading: report.workforceLoading,
+                    competitors: report.competitors,
+                    competitorsLoading: report.competitorsLoading,
+                    employees: report.employees,
+                    employeesTotal: report.employeesTotal,
+                    employeesLoading: report.employeesLoading,
+                    decisionMakers: report.decisionMakers,
+                    decisionMakersLoading: report.decisionMakersLoading,
+                  }}
+                  onReveal={revealContact}
+                  onSearchCompany={(d) => requestSearch(d)}
+                />
+              </section>
+            ) : (
+              <section className="w-full pb-10">
+                <div className="font-mono text-[0.66rem] text-muted mb-3">
+                  ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
+                  {report.resolvedFrom ? ` · ${report.resolvedFrom} → ${report.domain}` : ''}
                 </div>
-              )}
-              {done && (
-                <div className="text-white/80 text-xs mb-2">
-                  Live report · ${report.cost.toFixed(2)} · {(report.durationMs / 1000).toFixed(1)}s
-                </div>
-              )}
-
-              <OrchestrationTrace
-                steps={buildTrace(report, done)}
-                done={done}
-                durationMs={report.durationMs}
-              />
-
               {report.company ? (
                 <CompanyCard company={report.company} />
               ) : report.companyError ? (
@@ -457,12 +596,27 @@ export default function Home() {
                   />
                 )}
               </div>
-            </section>
-          )}
+              </section>
+            ))}
         </main>
 
         <Footer />
       </div>
+
+      {/* ── Floating view toggle — fixed bottom-right, visible when report is ready ── */}
+      {showReport && done && (
+        <button
+          onClick={() => switchView(view === 'graph' ? 'summary' : 'graph')}
+          className="fixed bottom-6 right-4 z-40 font-mono text-[0.7rem] tracking-[0.16em] px-4 py-2.5 bg-black/80 backdrop-blur-sm transition-all active:scale-95"
+          style={{
+            border: `1px solid ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers}`,
+            color: view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers,
+            boxShadow: `0 0 18px ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers}28, 0 4px 16px rgba(0,0,0,0.5)`,
+          }}
+        >
+          {view === 'graph' ? '◊ SUMMARY VIEW' : '◈ GRAPH VIEW'}
+        </button>
+      )}
     </ToastProvider>
   );
 }
