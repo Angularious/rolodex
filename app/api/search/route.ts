@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
       resolvedFrom = norm.name;
       preResolvedCompany = mapCompany(raw, domain);
     } catch (err) {
-      await reconcileSpend(initialSpent - ESTIMATE_USD);
+      await reconcileSpend(initialSpent - ESTIMATE_USD, idHash);
       // Key hit its limit while resolving → show capacity, not a generic error.
       if (isQuotaError(err)) return errorResponse({ error: 'capacity' }, 503);
       return errorResponse({ error: 'server_error' }, 502);

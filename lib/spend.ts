@@ -102,10 +102,14 @@ export async function reconcileSpend(deltaUsd: number, ipHash?: string): Promise
   if (!sb) return;
   const delta = Math.round(deltaUsd * 100) / 100;
   if (delta === 0) return;
+  // Tag the IP only when the per-IP cap is on — mirrors reserveSpend, so the
+  // reservation and its reconcile row carry the IP symmetrically and the per-IP
+  // daily sum nets to true per-visitor spend (never a stray negative-only row).
+  const ipCap = perIpDailyCapUsd();
   const { error } = await sb.rpc('record_spend', {
     p_cost: delta,
     p_site: SITE_ID,
-    p_ip: ipHash ?? null,
+    p_ip: ipCap != null ? ipHash ?? null : null,
   });
   if (error) console.error('[spend.reconcile]', error.message);
 }
