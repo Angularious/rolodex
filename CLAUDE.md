@@ -21,11 +21,12 @@ Orthogonal-owned branding.
   40). Layered beneath it: per-IP `PER_IP_DAILY_USD` ($5) + per-session
   `SESSION_DAILY_USD` ($3).
 - **Env knobs (Vercel; all have safe code defaults so none are strictly required):**
-  spend `DAILY_SPEND_CAP_USD` / `PER_IP_DAILY_USD` (5) / `SESSION_DAILY_USD` (3) — read
-  per-request, live immediately. Rate `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY`
-  (30/300/1000), `EMPLOYEE_PAGE_SIZE` (8), `EMPLOYEE_LIST_MAX` (15) — read at cold
-  start, need a redeploy to change. `SESSION_SECRET` (falls back to `IP_HASH_SALT`).
-  `SITE_ID` (defaults `'rolodex'`).
+  spend `DAILY_SPEND_CAP_USD` / `PER_IP_DAILY_USD` (5) / `SESSION_DAILY_USD` (3); rate
+  `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY` (30/300/1000); `EMPLOYEE_PAGE_SIZE` (8);
+  `EMPLOYEE_LIST_MAX` (15); `SESSION_SECRET` (falls back to `IP_HASH_SALT`); `SITE_ID`
+  (defaults `'rolodex'`). **Vercel binds env to a deployment, so editing ANY of these
+  requires a redeploy to take effect** (the spend caps are re-read per request *within*
+  a deployment, but a dashboard change still needs a redeploy to reach the functions).
 
 ## Stack
 Next.js 14 App Router · React 18 · Tailwind 3 + custom retro CSS · Supabase
