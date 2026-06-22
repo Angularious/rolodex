@@ -116,7 +116,7 @@ function buildTrace(r: Report, done: boolean): TraceStep[] {
       label: 'Find people',
       hint: 'Employee roster',
       status: status(r.employeesLoading, r.employeesError, r.employees.length > 0),
-      count: r.employeesTotal || r.employees.length || null,
+      count: r.employees.length || null,
       countLabel: 'people',
     },
     {
@@ -547,7 +547,7 @@ export default function Home() {
                 active={activeTab}
                 onChange={setActiveTab}
                 tabs={[
-                  { id: 'employees', label: 'Employees', count: report.employeesTotal || report.employees.length || null },
+                  { id: 'employees', label: 'Employees', count: report.employees.length || null },
                   { id: 'decisionmakers', label: 'Decision-makers', count: report.decisionMakers?.length ?? null },
                   { id: 'departments', label: 'Departments', count: report.workforce?.departments.length ?? null },
                   { id: 'competitors', label: 'Competitors', count: report.competitors?.length ?? null },

@@ -3,10 +3,11 @@
 Public demo: enter a company **domain or name** → instant streamed intelligence
 report (profile + funding + tech stack, department headcount, employees, decision-
 makers, competitors). Data from **Company Enrich** (firmographics, funding, tech,
-workforce, people) + **ContactOut** (decision-makers, on-demand email/phone reveal)
-+ **Tomba** (competitors + a $0.01 employee-list augment), all via the Orthogonal
-API. Retro Cartoon-Network aesthetic. "Powered by orthogonal.com" demo — not
-Orthogonal-owned branding.
+workforce, people, **decision-makers via a seniority-filtered people-search**) +
+**ContactOut** (on-demand email/phone reveal fallback only) + **Tomba**
+(competitors + a $0.01 employee-list augment), all via the Orthogonal API. Retro
+Cartoon-Network aesthetic. "Powered by orthogonal.com" demo — not Orthogonal-owned
+branding.
 
 - **Repo:** github.com/Angularious/rolodex (branch `main`; `gh` authed as Angularious)
 - **Live:** rolodex-lime.vercel.app (Vercel, auto-deploys on push to `main`; feature
@@ -16,6 +17,11 @@ Orthogonal-owned branding.
   **Per-visitor caps + honest cost accounting + Tomba employee augment merged & live
   2026-06-22 (PR #15)**; the Supabase migration (rate_events.site, spend_events.ip_hash,
   5-arg `reserve_spend`) was applied to prod first. pg_cron pruning is enabled.
+  **Audit cleanup (PR #17): dead deps removed, image optimizer disabled, font warning
+  fixed, ledger nits.** **Decision-makers moved from ContactOut → seniority-filtered
+  CE people-search, + employee-count display fix (this change)** — ContactOut's
+  decision-makers endpoint returned wrong/empty results for acquisitions (figma → 3
+  Weavy people); CE returns the real execs. Cost/search rose ~$0.34→~$0.58.
 - **Cap value:** global cap is whatever `DAILY_SPEND_CAP_USD` is set to in Vercel
   (intent is **$20**; the env var predates this work — confirm it reads 20, not the old
   40). Layered beneath it: per-IP `PER_IP_DAILY_USD` ($5) + per-session
@@ -23,6 +29,7 @@ Orthogonal-owned branding.
 - **Env knobs (Vercel; all have safe code defaults so none are strictly required):**
   spend `DAILY_SPEND_CAP_USD` / `PER_IP_DAILY_USD` (5) / `SESSION_DAILY_USD` (3); rate
   `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY` (30/300/1000); `EMPLOYEE_PAGE_SIZE` (8);
+  `DM_PAGE_SIZE` (12, decision-maker people-search size — a real cost knob now);
   `EMPLOYEE_LIST_MAX` (15); `SESSION_SECRET` (falls back to `IP_HASH_SALT`); `SITE_ID`
   (defaults `'rolodex'`). **Vercel binds env to a deployment, so editing ANY of these
   requires a redeploy to take effect** (the spend caps are re-read per request *within*
@@ -76,9 +83,25 @@ the user's keys; it's already gitignore'd so it never gets committed.
   (ContactOut by LinkedIn) to verify / add a phone. Tomba failure keeps the CE-only
   list. This is an AUGMENT (not the replacement option) — it adds $0.01, doesn't cut
   cost; it trades a penny for breadth + free (unverified) emails.
+- **Decision-makers:** the `decisionmakers` section is a **seniority-filtered CE
+  `/people/search`** (`peopleSearchSenior`; `seniority:
+  c-suite/founder/owner/partner/vp/head/director`; `DM_PAGE_SIZE` default 12,
+  per-result priced $0.0245 each), mapped by `mapDecisionMakers` (`lib/companyenrich.ts`)
+  with the **same role-match + non-employee filter as employees** (so board
+  members / investors are dropped), sorted seniors-first, and carrying a `ceId`.
+  **This REPLACED the ContactOut `/v1/people/decision-makers` endpoint (2026-06-22)**,
+  which had poor domain coverage — for figma.com it returned only 3 people, **all
+  from the acquired Weavy team, zero actual Figma leadership** (ContactOut folds an
+  acquisition's staff under the parent domain). CE returns the real CEO/CPO/CMO/VPs
+  (verified figma: 9 real DMs). Trade-offs: CE gives **no pre-reveal contact-coverage
+  flags** (so decision-makers are no longer coverage-gated — Reveal is always offered,
+  like employees) and no rich skills/education/summary panel; experience lines are
+  derived from the CE role timeline. `ceId` means DM reveals hit the cheap CE tier.
 - **`/api/reveal`** is the on-demand email/phone route (per-click, not streamed).
   Same gating as search. Tiered: Company Enrich `/people/email` by person id ($0.12)
   → fall back to ContactOut `/v1/linkedin/enrich` ($0.55). Records real dollar cost.
+  **Both employees AND decision-makers now carry a `ceId`**, so both start at the
+  cheap CE tier and only fall back to ContactOut on a miss.
 - Shared gating lives in `lib/guard.ts` (`originAllowed`, `isBotUserAgent`), reused
   by both money-spending routes.
 - Client (`app/page.tsx`) reads the stream and renders sections progressively; the
@@ -138,32 +161,32 @@ Per Orthogonal's data policy, **returned company/people data is NEVER persisted*
 Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
-Cost: ≈ **$0.34/search** at `PAGE_SIZE=8` (profile $0.012 + workforce $0.061 +
-people×8 $0.196 + competitors $0.01 + decision-makers $0.05 + Tomba employee-augment
-$0.01 when the CE list is thin). `PAGE_SIZE` (env
-`EMPLOYEE_PAGE_SIZE`, default 8, in `app/api/search/route.ts`) is the cost knob
-(per-result $0.0245); the people-search line dominates. **The ledger charges the
-REQUESTED `PAGE_SIZE`, not the returned count** — CE bills on requested page size,
-so charging the returned count let the hard cap pass ~25-35% more real spend than
-it recorded (verified: figma returns 6 for a request of 8). **`DM_PAGE_SIZE` is
-decoupled from `PAGE_SIZE`** — the decision-makers call is a flat $0.05 regardless
-of `per_page` (`reveal_info=false`), so it stays at 25 to surface more
-decision-makers for free; only the employee people-search scales with count.
-**Capacity under a hard $20 cap: ~45–58 full searches/day total** (worst-case
-reservation $0.44 → ~45; typical search $0.34 → ~58), shared across all visitors —
-so ~100 users each running one real search does NOT fit in $20; the per-IP and
-per-session caps decide who gets served and stop one actor taking it all. (NOTE: the
-Tomba employee augment we chose ADDS $0.01 for breadth; the alternative — REPLACING
-CE people-search with Tomba — would instead cut ~$0.19/search → ~140 searches/$20,
-at the cost of verified-email quality. Revisit if the $20 ceiling needs to stretch.) **Funding fallback (Aviato $0.08) fires when
+Cost: ≈ **$0.58/search** at `PAGE_SIZE=8`, `DM_PAGE_SIZE=12` (profile $0.012 +
+workforce $0.061 + employees×8 $0.196 + **decision-makers×12 $0.294** + competitors
+$0.01 + Tomba employee-augment $0.01 when the CE list is thin). **Both
+people-search lines scale with count** (per-result $0.0245): `PAGE_SIZE` (env
+`EMPLOYEE_PAGE_SIZE`, default 8) is the employee knob; **`DM_PAGE_SIZE` (env, default
+12) is the decision-maker knob — it is now per-result priced, NOT a flat call**
+(decision-makers moved off the flat-$0.05 ContactOut endpoint to a seniority-filtered
+CE people-search for far better quality; see Architecture). **The ledger charges the
+REQUESTED page size, not the returned count** — CE bills on requested page size, so
+charging the returned count let the hard cap pass ~25-35% more real spend than it
+recorded (verified: figma returns 6 for a request of 8). **Capacity under a hard $20
+cap: ~29–34 full searches/day total** (worst-case reservation ~$0.68 → ~29; typical
+search ~$0.58 → ~34), shared across all visitors — so ~100 users each running one
+real search does NOT fit in $20; the per-IP and per-session caps decide who gets
+served. If the ceiling needs to stretch, drop `DM_PAGE_SIZE` (each unit is $0.0245)
+or raise `DAILY_SPEND_CAP_USD`. **Funding fallback (Aviato $0.08) fires when
 CE rounds are missing dollar amounts** (no rounds, or rounds with null amounts), so
-it adds to a search's cost (≈ $0.46) only on those; worst case is reserved up front
+it adds to a search's cost (≈ $0.66) only on those; worst case is reserved up front
 in `ESTIMATE_USD`.
 Reveals are billed on demand on top:
 - **Employee reveal** — CE `/people/email` hit = $0.12; CE miss → ContactOut
   fallback = $0.12 + $0.55 = **$0.67** (so a CE miss costs *more* than going
   straight to ContactOut). CE coverage on senior people is good (verified).
-- **Decision-maker reveal** — ContactOut only = **$0.55** (no CE id available).
+- **Decision-maker reveal** — now CE `/people/email` ($0.12) FIRST (DMs carry a
+  `ceId`), ContactOut `/v1/linkedin/enrich` ($0.55) fallback on a miss (was
+  ContactOut-only $0.55 before the CE-decision-makers switch).
 - **CAVEAT:** the ledger records the people-search cost on the *returned* count,
   but Company Enrich bills on the *requested* `pageSize`. For companies returning
   <25 people, recorded spend slightly under-counts the real invoice. The hard cap
@@ -178,17 +201,19 @@ Reveals are billed on demand on top:
   POST is signalled by whether params go in `query` or `body`.
 - **GOTCHA: `company-enrich /companies/enrich` has BOTH a GET (by domain) and a POST
   (by name/social) at the same path.** Pass `query` for by-domain, `body` for by-name.
-- **GOTCHA: ContactOut's two endpoints have DIFFERENT shapes — don't conflate them.**
-  `/v1/people/decision-makers` → `{ profiles: { "<linkedin-url>": {...,
-  contact_availability:{work_email,personal_email,phone}} } }` (a map keyed by URL,
-  PLURAL-ish availability flags). `/v1/linkedin/enrich` → `{ profile: { work_email:[],
-  personal_email:[], phone:[], email:[] } }` (single `profile`, SINGULAR names, each a
-  string[]). Reading the wrong shape silently returns null AND still charges — this
-  was the PR #2 bug.
+- **GOTCHA: ContactOut `/v1/linkedin/enrich` shape (reveal).** → `{ profile: {
+  work_email:[], personal_email:[], phone:[], email:[] } }` (single `profile`,
+  SINGULAR names, each a string[]). Reading the wrong shape silently returns null AND
+  still charges — this was the PR #2 bug. (The old `/v1/people/decision-makers`
+  endpoint — a URL-keyed `profiles` map with `contact_availability` flags — is **no
+  longer used**; decision-makers come from CE now.)
+- **GOTCHA: CE `/people/search` `seniority` filter wants HYPHENATED values**
+  (`"c-suite"`, not `"c_suite"` → 400). Used by `peopleSearchSenior` for decision-makers.
 - **Spend ledger is in DOLLARS** — reserve/reconcile pass dollar amounts (per-call
   prices vary by provider). Don't revert to a flat per-call multiplier.
-- Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
-  `lib/contactout.ts` (decision-makers/reveal), `lib/tomba.ts` (similar +
+- Mappers + raw shapes: `lib/companyenrich.ts`
+  (enrich/workforce/people/email/**decision-makers**), `lib/contactout.ts` (reveal
+  only), `lib/tomba.ts` (similar +
   domain-search employee augment),
   `lib/aviato.ts` (funding-rounds fallback, with sanity filter).
 - Data quality varies by domain. Good demo targets (verified): stripe.com,
@@ -308,10 +333,11 @@ WAF/Firewall (dashboard-configured, no visible challenge) over a CAPTCHA.
   **global** `DAILY_SPEND_CAP_USD` (code default 20), **per-IP** `PER_IP_DAILY_USD`
   (default $5, hard backstop), **per-session cookie** `SESSION_DAILY_USD` (default $3,
   soft/NAT-friendly). All editable in Vercel env without a deploy.
-- **Reveal is gated by coverage**: decision-makers with all three coverage flags ✕
-  (no work email / personal / phone) show a disabled, greyed "No contact available"
-  button so a guaranteed-empty $0.55 reveal can't be triggered (PR #3). Employees
-  have no pre-reveal coverage signal, so their Reveal button is always active.
+- **Reveal coverage-gating was REMOVED for decision-makers (2026-06-22)** when they
+  moved to CE (which returns no pre-reveal coverage flags). Decision-makers and
+  employees now both always show an active Reveal button. (The old PR #3 behavior —
+  greying out decision-makers with all three coverage flags ✕ — only worked with the
+  ContactOut decision-makers endpoint we no longer call.)
 - Reveals share the per-IP rate-limit budget with searches (conservative — bounds
   per-user spend). Email reveals are shown in-session only, never persisted.
 - "Powered by orthogonal.com" appears only in the footer (kept out of hero subtext

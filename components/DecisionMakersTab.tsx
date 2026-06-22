@@ -17,14 +17,6 @@ function rowKey(d: DecisionMaker): string {
   return d.linkedin || d.name;
 }
 
-function Coverage({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span className={`badge ${ok ? 'badge-green' : 'badge-slate'}`} title={`${label}: ${ok ? 'available' : 'none'}`}>
-      {ok ? '✓' : '✕'} {label}
-    </span>
-  );
-}
-
 // Avatar that quietly removes itself if the image fails to load (some profile
 // image URLs 404 / require auth) — falls back to initials.
 export function Avatar({ src, name, size = 40 }: { src?: string | null; name: string; size?: number }) {
@@ -103,7 +95,7 @@ export default function DecisionMakersTab({
     if (revealed[key]?.loading || revealed[key]?.tried) return;
     setRevealed((r) => ({ ...r, [key]: { loading: true, tried: false, email: null, phone: null } }));
     try {
-      const res = await onReveal({ linkedin: d.linkedin });
+      const res = await onReveal({ ceId: d.ceId, linkedin: d.linkedin });
       setRevealed((r) => ({
         ...r,
         [key]: { loading: false, tried: true, email: res.email, phone: res.phone ?? null },
@@ -122,8 +114,8 @@ export default function DecisionMakersTab({
     <div className="pop-in">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <p className="text-sm text-slate">
-          {decisionMakers.length} decision-makers. Badges show contact coverage before you spend.
-          Reveal pulls a verified email/phone on demand.
+          {decisionMakers.length} senior decision-makers. Reveal pulls a verified
+          email/phone on demand.
         </p>
         {functions.length > 0 && (
           <select className="retro-select" value={func} onChange={(e) => setFunc(e.target.value)}>
@@ -140,7 +132,6 @@ export default function DecisionMakersTab({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {list.map((d) => {
           const st = revealed[rowKey(d)];
-          const noContact = !d.hasWorkEmail && !d.hasPersonalEmail && !d.hasPhone;
           return (
             <div key={rowKey(d)} className="retro-panel-flat p-3">
               <div className="flex justify-between items-start gap-2">
@@ -207,12 +198,6 @@ export default function DecisionMakersTab({
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                <Coverage ok={d.hasWorkEmail} label="Work email" />
-                <Coverage ok={d.hasPersonalEmail} label="Personal" />
-                <Coverage ok={d.hasPhone} label="Phone" />
-              </div>
-
               <div className="mt-2">
                 {st?.email || st?.phone ? (
                   <div className="flex flex-col gap-1 text-sm">
@@ -229,14 +214,6 @@ export default function DecisionMakersTab({
                   </div>
                 ) : st?.tried ? (
                   <span className="text-slate text-xs">No contact found</span>
-                ) : noContact ? (
-                  <button
-                    disabled
-                    title="No work email, personal email, or phone on file — a reveal would cost money and return nothing"
-                    className="retro-btn retro-btn-sm opacity-40 cursor-not-allowed"
-                  >
-                    No contact available
-                  </button>
                 ) : (
                   <button
                     onClick={() => reveal(d)}

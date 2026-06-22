@@ -648,7 +648,6 @@ function InitialsAvatar({ name, color }: { name: string; color: string }) {
 }
 
 function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
-  const noContact = !person.hasWorkEmail && !person.hasPersonalEmail && !person.hasPhone;
   return (
     <div>
       {person.photo ? (
@@ -687,7 +686,7 @@ function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; 
           LINKEDIN ↗
         </a>
       )}
-      <RevealBlock id={id} color={color} linkedin={person.linkedin} reveal={reveal} st={st} noContact={noContact} />
+      <RevealBlock id={id} color={color} ceId={person.ceId} linkedin={person.linkedin} reveal={reveal} st={st} />
     </div>
   );
 }

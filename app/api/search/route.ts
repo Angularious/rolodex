@@ -17,11 +17,12 @@ import {
   profileById,
   workforce,
   peopleSearch,
+  peopleSearchSenior,
   mapCompany,
   mapWorkforce,
   mapPeople,
+  mapDecisionMakers,
 } from '@/lib/companyenrich';
-import { decisionMakers, mapDecisionMakers } from '@/lib/contactout';
 import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
 import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
@@ -42,10 +43,13 @@ const PAGE_SIZE = (() => {
   return Number.isFinite(n) && n > 0 && n <= 25 ? n : 8;
 })();
 
-// Decision-makers page size. The /people/decision-makers call is a flat $0.05
-// regardless of per_page (reveal_info=false), so this is decoupled from
-// PAGE_SIZE — we keep it higher to surface more decision-makers for free.
-const DM_PAGE_SIZE = 25;
+// Decision-makers page size. Decision-makers come from a seniority-filtered CE
+// people-search (per-result priced, $0.0245 each), so this is a real cost knob —
+// kept modest. Env-tunable without a deploy.
+const DM_PAGE_SIZE = (() => {
+  const n = parseInt(process.env.DM_PAGE_SIZE ?? '', 10);
+  return Number.isFinite(n) && n > 0 && n <= 25 ? n : 12;
+})();
 
 // Max combined employees to show (CE rows + deduped Tomba fillers). Tomba's
 // $0.01 domain-search returns up to 50 for the same price, so this is purely a
@@ -61,7 +65,6 @@ const PRICE = {
   workforce: 0.06125, // company-enrich /companies/workforce
   perPerson: 0.0245, // company-enrich /people/search (per result)
   competitors: 0.01, // tomba /v1/similar
-  decisionMakers: 0.05, // contactout /people/decision-makers (reveal off)
   aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
   tombaEmployees: 0.01, // tomba /v1/domain-search (employee-list augment, flat)
 };
@@ -72,8 +75,8 @@ const ESTIMATE_USD =
   PRICE.enrich * 2 +
   PRICE.workforce +
   PRICE.perPerson * PAGE_SIZE +
+  PRICE.perPerson * DM_PAGE_SIZE + // decision-makers (seniority-filtered people-search)
   PRICE.competitors +
-  PRICE.decisionMakers +
   PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
   PRICE.tombaEmployees; // employee-list augment (flat, fires on a thin CE list)
 
@@ -311,9 +314,9 @@ export async function POST(req: NextRequest) {
             noteQuota(err);
             write({ type: 'competitors', data: null, error: 'unavailable' });
           }),
-        decisionMakers(domain, DM_PAGE_SIZE)
+        peopleSearchSenior(domain, DM_PAGE_SIZE)
           .then((raw) => {
-            spentUsd += PRICE.decisionMakers;
+            spentUsd += PRICE.perPerson * DM_PAGE_SIZE;
             write({ type: 'decisionmakers', data: mapDecisionMakers(raw) });
           })
           .catch((err) => {
