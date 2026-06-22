@@ -96,6 +96,7 @@ export interface Employee {
 
 export interface DecisionMaker {
   name: string;
+  ceId?: string | null; // Company Enrich person id → enables the cheap reveal tier
   title?: string | null;
   headline?: string | null;
   location?: string | null;
@@ -103,7 +104,7 @@ export interface DecisionMaker {
   seniority?: string | null;
   jobFunction?: string | null;
   linkedin?: string | null;
-  // Rich profile fields returned free by the decision-makers call.
+  // Rich profile fields (populated when the source provides them).
   photo?: string | null; // profile picture URL
   summary?: string | null; // bio
   followers?: number | null;
@@ -111,7 +112,8 @@ export interface DecisionMaker {
   skills?: string[]; // top skills
   experience?: string[]; // pre-formatted work-history lines
   education?: string[]; // pre-formatted education lines
-  // Coverage flags returned for free (before paying to reveal).
+  // Pre-reveal contact coverage. Unknown (false) for CE-sourced decision-makers
+  // — the UI no longer gates on these; reveal is always offered.
   hasWorkEmail: boolean;
   hasPersonalEmail: boolean;
   hasPhone: boolean;

@@ -89,10 +89,13 @@ export default function SummaryView({
 
   const company = data.company;
   const companyLoading = !company && !data.companyError;
+  // True headcount for the "Employees" stat: prefer the workforce observed count,
+  // fall back to the people-search total. The tab badge shows the loaded sample.
+  const totalEmployees = data.workforce?.total ?? (data.employeesTotal || null);
 
   const tabDefs: { id: SummaryTab; label: string; count: number | null; color: string; loading: boolean }[] = [
     { id: 'people', label: 'Decision-Makers', count: data.decisionMakers?.length ?? null, color: CIRCUIT_COLOR.decisionMakers, loading: data.decisionMakersLoading },
-    { id: 'employees', label: 'Employees', count: data.employeesTotal || data.employees.length || null, color: CIRCUIT_COLOR.employees, loading: data.employeesLoading },
+    { id: 'employees', label: 'Employees', count: data.employees.length || null, color: CIRCUIT_COLOR.employees, loading: data.employeesLoading },
     { id: 'departments', label: 'Departments', count: data.workforce?.departments.length ?? null, color: CIRCUIT_COLOR.departments, loading: data.workforceLoading },
     { id: 'competitors', label: 'Competitors', count: data.competitors?.length ?? null, color: CIRCUIT_COLOR.competitors, loading: data.competitorsLoading },
     { id: 'tech', label: 'Tech Stack', count: company?.tech.length ?? null, color: CIRCUIT_COLOR.tech, loading: false },
@@ -173,7 +176,7 @@ export default function SummaryView({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, margin: '6px 14px' }}>
           <MetricChip label="Total Funding" value={company.fundingTotal} color="#22d3ee" />
           <MetricChip label="Revenue" value={company.revenue} color="#22d3ee" />
-          <MetricChip label="Size" value={company.size} color="#22d3ee" />
+          <MetricChip label="Employees" value={totalEmployees != null ? totalEmployees.toLocaleString() : company.size} color="#22d3ee" />
           <MetricChip label="HQ" value={company.hqLocation} color="#22d3ee" />
         </div>
       ) : companyLoading ? (
@@ -276,6 +279,7 @@ export default function SummaryView({
         {tab === 'employees' && (
           <EmployeesPane
             employees={data.employees}
+            total={totalEmployees}
             loading={data.employeesLoading}
             revealMap={revealMap}
             onReveal={reveal}
@@ -361,7 +365,6 @@ function PeoplePane({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {decisionMakers.map(dm => {
         const id = dm.linkedin || dm.name;
-        const noContact = !dm.hasWorkEmail && !dm.hasPersonalEmail && !dm.hasPhone;
         return (
           <PersonRow
             key={id}
@@ -371,9 +374,8 @@ function PeoplePane({
             photo={dm.photo}
             linkedin={dm.linkedin}
             color={CIRCUIT_COLOR.decisionMakers}
-            noContact={noContact}
             st={revealMap[id]}
-            onReveal={() => onReveal(id, { linkedin: dm.linkedin })}
+            onReveal={() => onReveal(id, { ceId: dm.ceId, linkedin: dm.linkedin })}
             dm={dm}
           />
         );
@@ -387,11 +389,13 @@ function PeoplePane({
 // ---------------------------------------------------------------------------
 function EmployeesPane({
   employees,
+  total,
   loading,
   revealMap,
   onReveal,
 }: {
   employees: Employee[];
+  total: number | null;
   loading: boolean;
   revealMap: Record<string, RevealState>;
   onReveal: (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => void;
@@ -401,6 +405,11 @@ function EmployeesPane({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {total != null && total > employees.length && (
+        <div style={{ fontSize: 10, letterSpacing: '0.16em', color: '#5b6b82', textTransform: 'uppercase' }}>
+          Showing {employees.length} of {total.toLocaleString()} employees
+        </div>
+      )}
       {employees.map((e, i) => {
         const id = e.ceId || e.linkedin || e.fullName;
         return (
@@ -557,11 +566,8 @@ function ExpandedDMDetail({ dm, color }: { dm: DecisionMaker; color: string }) {
       style={{ borderTop: `1px solid ${color}20`, padding: '12px 14px 14px', background: 'rgba(4,6,14,0.55)' }}
       className="circ-fade-in"
     >
-      {/* Coverage badges */}
+      {/* Profile meta */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-        <CoverageBadge ok={dm.hasWorkEmail} label="Work email" />
-        <CoverageBadge ok={dm.hasPersonalEmail} label="Personal" />
-        <CoverageBadge ok={dm.hasPhone} label="Phone" />
         {dm.followers != null && (
           <span style={{ fontSize: 9, color: '#5b6b82', border: '1px solid #1c2940', padding: '3px 7px', letterSpacing: '0.1em', fontFamily: FONT }}>
             {dm.followers.toLocaleString()} FOLLOWERS
@@ -621,22 +627,6 @@ function ExpandedDMDetail({ dm, color }: { dm: DecisionMaker; color: string }) {
         </div>
       )}
     </div>
-  );
-}
-
-function CoverageBadge({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span style={{
-      fontSize: 9,
-      letterSpacing: '0.1em',
-      padding: '3px 7px',
-      fontFamily: FONT,
-      border: `1px solid ${ok ? '#34d39940' : '#1c2940'}`,
-      color: ok ? '#34d399' : '#2a3a50',
-      background: ok ? '#34d39910' : 'transparent',
-    }}>
-      {ok ? '✓' : '✕'} {label.toUpperCase()}
-    </span>
   );
 }
 
