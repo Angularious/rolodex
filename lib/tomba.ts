@@ -50,6 +50,7 @@ interface RawTombaPerson {
   seniority?: string | null;
   linkedin?: string | null;
   country?: string | null;
+  type?: string | null; // tomba: 'personal' | 'generic' (unreliable — see isRealPerson)
 }
 interface RawDomainSearch {
   // Tomba wraps its payload in a top-level `data` (like /v1/similar).
@@ -72,10 +73,53 @@ function tidyTitle(s: string | null | undefined): string | null {
     : t;
 }
 
+// Role / department / program mailboxes that aren't a real person — matched on
+// the email local-part (before @, ignoring dots/dashes/underscores and +tags).
+// Tomba's `type` field is unreliable (it labels help@-style inboxes "personal"),
+// so we filter by mailbox name + name quality instead.
+const ROLE_MAILBOX = new Set([
+  'help', 'helpdesk', 'support', 'info', 'information', 'contact', 'contactus', 'hello',
+  'hi', 'hey', 'ask', 'admin', 'administrator', 'sales', 'presales', 'team', 'careers',
+  'career', 'jobs', 'job', 'recruiting', 'recruitment', 'hr', 'press', 'media', 'pr',
+  'marketing', 'billing', 'invoices', 'invoice', 'accounts', 'accounting', 'finance',
+  'legal', 'privacy', 'security', 'abuse', 'compliance', 'noreply', 'donotreply',
+  'mail', 'mailer', 'office', 'enquiries', 'inquiries', 'enquiry', 'feedback',
+  'newsletter', 'news', 'notifications', 'notification', 'service', 'services',
+  'webmaster', 'postmaster', 'sysadmin', 'it', 'dev', 'developers', 'developer', 'api',
+  'partners', 'partner', 'partnerships', 'events', 'event', 'community', 'customer',
+  'customers', 'customerservice', 'customersuccess', 'orders', 'order', 'shop', 'store',
+  'subscribe', 'unsubscribe', 'bounce', 'general', 'main', 'official', 'team-us',
+]);
+
+function isRoleEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const local = email.split('@')[0].toLowerCase().split('+')[0];
+  if (ROLE_MAILBOX.has(local)) return true;
+  if (ROLE_MAILBOX.has(local.replace(/[._-]/g, ''))) return true;
+  return false;
+}
+
+// Keep only rows that look like a real individual. A real profile has a proper
+// human name (first + at least an initial, OR a 2-token full_name) and is not a
+// role mailbox. This drops Tomba noise like `ukpublicsectoragreement@` (no name)
+// while keeping `callum@` → "Callum M" (first + initial, has a LinkedIn).
+//
+// NOTE: we deliberately do NOT trust Tomba's `type` field — it's wrong in both
+// directions (it tags Figma's CEO `dylan@figma.com` "generic" but a program
+// inbox "personal"). Name quality + the role-mailbox blocklist are the signal.
+function isRealPerson(p: RawTombaPerson): boolean {
+  if (isRoleEmail(p.email)) return false;
+  const first = (p.first_name ?? '').trim();
+  const last = (p.last_name ?? '').trim();
+  const fullTokens = (p.full_name ?? '').trim().split(/\s+/).filter(Boolean);
+  return (first.length >= 2 && last.length >= 1) || fullTokens.length >= 2;
+}
+
 export function mapTombaEmployees(raw: RawDomainSearch): Employee[] {
   const out: Employee[] = [];
   const seen = new Set<string>();
   for (const p of raw?.data?.emails ?? []) {
+    if (!isRealPerson(p)) continue; // drop role mailboxes / nameless / program inboxes
     const fullName =
       p.full_name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
     if (!fullName) continue;
@@ -100,7 +144,9 @@ export function mapTombaEmployees(raw: RawDomainSearch): Employee[] {
       source: 'tomba',
     });
   }
-  return out;
+  // Prefer profiles that carry a LinkedIn when filling the list (higher-signal,
+  // and answers "get us their LinkedIns too"). Stable otherwise.
+  return out.sort((a, b) => (a.linkedin ? 0 : 1) - (b.linkedin ? 0 : 1));
 }
 
 // --------------------------------------------------------------- dedup / merge

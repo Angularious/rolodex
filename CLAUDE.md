@@ -61,9 +61,16 @@ the user's keys; it's already gitignore'd so it never gets committed.
   **Employee augment:** the `employees` section is CE `/people/search` FIRST, then —
   when the CE list is shorter than `EMPLOYEE_LIST_MAX` (default 15) — topped up with
   **Tomba `/v1/domain-search`** (flat $0.01, up to 50, emails inline). Tomba rows are
-  mapped to the same `Employee` shape, `source:'tomba'` + `emailUnverified:true`, and
-  **deduped against CE by normalized LinkedIn URL then full name** (`mergeEmployees`
-  in `lib/tomba.ts`) so no CE profile is duplicated. Tomba rows have **no photo / city
+  **cleaned by `isRealPerson` (`lib/tomba.ts`)** before use: drops role/program
+  mailboxes via a local-part blocklist (`help@`, `support@`, `info@`, `privacy@`,
+  `customercare@`, …) and nameless rows (needs first+initial or a 2-token full_name),
+  then **sorts LinkedIn-carrying profiles first** when filling. **Do NOT trust Tomba's
+  `type` field** — it's wrong both ways (tags Figma's CEO `dylan@` "generic", a program
+  inbox "personal"), so name-quality + the blocklist are the signal, not `type`.
+  Survivors are mapped to the same `Employee` shape, `source:'tomba'` +
+  `emailUnverified:true`, and **deduped against CE by normalized LinkedIn URL then full
+  name** (`mergeEmployees`) so no CE profile is duplicated. (Verified on figma: 50→42
+  kept, 41 w/ LinkedIn; stripe: 50→48.) Tomba rows have **no photo / city
   / startDate / ceId** (Tomba doesn't return them) and their emails are unverified
   pattern guesses — the UI labels them "unverified · likely" and still offers Enrich
   (ContactOut by LinkedIn) to verify / add a phone. Tomba failure keeps the CE-only
