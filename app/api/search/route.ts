@@ -5,6 +5,13 @@ import { reserveSpend, reconcileSpend } from '@/lib/spend';
 import { normalizeInput } from '@/lib/normalize';
 import { originAllowed, isBotUserAgent } from '@/lib/guard';
 import {
+  readSession,
+  sessionExceeded,
+  addSessionSpend,
+  sessionCookie,
+  secondsUntilUtcMidnight,
+} from '@/lib/session';
+import {
   enrichByDomain,
   enrichByName,
   profileById,
@@ -16,7 +23,7 @@ import {
 } from '@/lib/companyenrich';
 import { decisionMakers, mapDecisionMakers } from '@/lib/contactout';
 import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
-import { similar, mapCompetitors } from '@/lib/tomba';
+import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
@@ -27,14 +34,26 @@ export const dynamic = 'force-dynamic';
 // parallel calls (≤9s), so the worst case exceeds Vercel's default 10s limit.
 export const maxDuration = 30;
 
-// Default employee page size — the main cost knob ($0.0245/person, billed per
-// returned result).
-const PAGE_SIZE = 10;
+// Default employee page size — the main cost knob ($0.0245/person). Company
+// Enrich bills on the REQUESTED page size, not the returned count, so this is
+// both the value knob and the cost knob. Env-tunable without a deploy.
+const PAGE_SIZE = (() => {
+  const n = parseInt(process.env.EMPLOYEE_PAGE_SIZE ?? '', 10);
+  return Number.isFinite(n) && n > 0 && n <= 25 ? n : 8;
+})();
 
 // Decision-makers page size. The /people/decision-makers call is a flat $0.05
 // regardless of per_page (reveal_info=false), so this is decoupled from
 // PAGE_SIZE — we keep it higher to surface more decision-makers for free.
 const DM_PAGE_SIZE = 25;
+
+// Max combined employees to show (CE rows + deduped Tomba fillers). Tomba's
+// $0.01 domain-search returns up to 50 for the same price, so this is purely a
+// display cap, env-tunable.
+const EMPLOYEE_DISPLAY_MAX = (() => {
+  const n = parseInt(process.env.EMPLOYEE_LIST_MAX ?? '', 10);
+  return Number.isFinite(n) && n > 0 && n <= 50 ? n : 15;
+})();
 
 // Per-call prices (USD) for the spend ledger. Keep in sync with the marketplace.
 const PRICE = {
@@ -44,6 +63,7 @@ const PRICE = {
   competitors: 0.01, // tomba /v1/similar
   decisionMakers: 0.05, // contactout /people/decision-makers (reveal off)
   aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
+  tombaEmployees: 0.01, // tomba /v1/domain-search (employee-list augment, flat)
 };
 
 // Worst-case cost of one search, reserved against the hard cap up front and
@@ -54,7 +74,8 @@ const ESTIMATE_USD =
   PRICE.perPerson * PAGE_SIZE +
   PRICE.competitors +
   PRICE.decisionMakers +
-  PRICE.aviatoFunding; // funding fallback may fire when CE has no round detail
+  PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
+  PRICE.tombaEmployees; // employee-list augment (flat, fires on a thin CE list)
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -94,12 +115,31 @@ export async function POST(req: NextRequest) {
     return errorResponse({ error: 'invalid_domain', message: norm.reason }, 422);
   }
 
-  // 3. Global spend HARD cap — atomically reserve this search's worst-case cost.
-  //    If it would exceed the daily cap, reject before spending anything. The
-  //    real cost is reconciled against this reservation once the search finishes.
-  //    Every path AFTER this point must reconcile (success or early return).
-  const reservation = await reserveSpend(ESTIMATE_USD);
+  // 3. Per-session (cookie) budget — NAT-friendly fairness guard so one browser
+  //    can't monopolize the global cap, without throttling a shared network.
+  //    Soft: bypassable by clearing cookies; the per-IP + global caps are hard.
+  const session = readSession(req);
+  if (sessionExceeded(session, ESTIMATE_USD)) {
+    return errorResponse(
+      { error: 'rate_limited', retryAfterSec: secondsUntilUtcMidnight() },
+      429,
+    );
+  }
+
+  // 4. Global spend HARD cap + per-IP daily sub-cap — atomically reserve this
+  //    search's worst-case cost, scoped to this IP. 'global' → whole-day cap hit
+  //    (everyone is at capacity); 'perip' → this visitor's daily $ budget is
+  //    spent (a per-visitor 429). The real cost is reconciled against this
+  //    reservation once the search finishes. Every path AFTER this point must
+  //    reconcile (success or early return).
+  const reservation = await reserveSpend(ESTIMATE_USD, idHash);
   if (!reservation.allowed) {
+    if (reservation.reason === 'perip') {
+      return errorResponse(
+        { error: 'rate_limited', retryAfterSec: secondsUntilUtcMidnight() },
+        429,
+      );
+    }
     return errorResponse({ error: 'capacity' }, 503);
   }
 
@@ -114,7 +154,7 @@ export async function POST(req: NextRequest) {
       const resolvedDomain = raw?.domain;
       if (!resolvedDomain) {
         // Release the unused part of the reservation before bailing.
-        await reconcileSpend(initialSpent - ESTIMATE_USD);
+        await reconcileSpend(initialSpent - ESTIMATE_USD, idHash);
         return errorResponse(
           { error: 'not_found', message: `Couldn't resolve "${norm.name}" to a company.` },
           404,
@@ -224,16 +264,44 @@ export async function POST(req: NextRequest) {
             noteQuota(err);
             write({ type: 'workforce', data: null, error: 'unavailable' });
           }),
-        peopleSearch(domain, PAGE_SIZE)
-          .then((raw) => {
+        (async () => {
+          try {
+            const raw = await peopleSearch(domain, PAGE_SIZE);
             const mapped = mapPeople(raw);
-            spentUsd += PRICE.perPerson * mapped.employees.length;
-            write({ type: 'employees', data: mapped.employees, totalAvailable: mapped.totalAvailable });
-          })
-          .catch((err) => {
+            // CE bills on the REQUESTED page size, not the returned count, so
+            // charge PAGE_SIZE (the returned count is often lower — e.g. figma
+            // returns 6 for a request of 8). Charging the returned count let the
+            // hard cap pass ~25-35% more real spend than it recorded.
+            spentUsd += PRICE.perPerson * PAGE_SIZE;
+
+            let employees = mapped.employees;
+            let totalAvailable = mapped.totalAvailable;
+
+            // Augment a thin CE list with Tomba's $0.01 domain-search directory
+            // (up to 50, emails inline-but-unverified). Deduped against CE and
+            // capped; a Tomba failure keeps the CE-only list.
+            if (employees.length < EMPLOYEE_DISPLAY_MAX) {
+              try {
+                let company = preResolvedCompany?.name || domain.split('.')[0];
+                if (company.length < 3) company = domain; // Tomba needs 3-75 chars
+                const tombaRaw = await domainSearch(domain, company, 50);
+                spentUsd += PRICE.tombaEmployees; // billed on the call, not the count
+                const filler = mapTombaEmployees(tombaRaw);
+                if (filler.length) {
+                  employees = mergeEmployees(employees, filler, EMPLOYEE_DISPLAY_MAX);
+                  totalAvailable = Math.max(totalAvailable, employees.length);
+                }
+              } catch (err) {
+                noteQuota(err); // keep the CE-only list on Tomba failure
+              }
+            }
+
+            write({ type: 'employees', data: employees, totalAvailable });
+          } catch (err) {
             noteQuota(err);
             write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' });
-          }),
+          }
+        })(),
         similar(domain)
           .then((raw) => {
             spentUsd += PRICE.competitors;
@@ -257,8 +325,9 @@ export async function POST(req: NextRequest) {
       await Promise.allSettled(jobs);
 
       const cost = Math.round(spentUsd * 100) / 100;
-      // Reconcile the worst-case reservation down to the real cost.
-      await reconcileSpend(spentUsd - ESTIMATE_USD);
+      // Reconcile the worst-case reservation down to the real cost (same IP hash
+      // so the per-IP daily sum nets correctly).
+      await reconcileSpend(spentUsd - ESTIMATE_USD, idHash);
 
       // Key limit hit mid-stream → abort to the capacity screen.
       if (quotaHit) write({ type: 'fatal', error: 'capacity' });
@@ -279,11 +348,17 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Charge the session budget by the worst-case estimate (consistent with the
+  // reservation; conservative for a soft guard). Set before the stream body —
+  // headers can't change once streaming starts.
+  const bumped = addSessionSpend(session, ESTIMATE_USD);
+
   return new Response(stream, {
     headers: {
       'content-type': 'application/x-ndjson; charset=utf-8',
       'cache-control': 'no-store, no-transform',
       'x-accel-buffering': 'no',
+      'set-cookie': sessionCookie(bumped),
     },
   });
 }

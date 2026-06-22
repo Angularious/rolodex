@@ -3,6 +3,13 @@ import { clientIp, hashIp } from '@/lib/hash';
 import { checkRateLimit } from '@/lib/ratelimit';
 import { reserveSpend, reconcileSpend } from '@/lib/spend';
 import { originAllowed, isBotUserAgent } from '@/lib/guard';
+import {
+  readSession,
+  sessionExceeded,
+  addSessionSpend,
+  sessionCookie,
+  secondsUntilUtcMidnight,
+} from '@/lib/session';
 import { resolveWorkEmail } from '@/lib/companyenrich';
 import { revealByLinkedin } from '@/lib/contactout';
 import { isQuotaError } from '@/lib/orthogonal';
@@ -57,9 +64,19 @@ export async function POST(req: NextRequest) {
   if (!rl.ok) {
     return errorResponse({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec }, 429);
   }
-  // Atomic hard-cap reservation (worst case = both tiers); reconciled below.
-  const reservation = await reserveSpend(ESTIMATE_USD);
+  // Per-session (cookie) budget — reveals share the same per-visitor budget as
+  // searches, so the priciest per-click action can't be the abuse vector.
+  const session = readSession(req);
+  if (sessionExceeded(session, ESTIMATE_USD)) {
+    return errorResponse({ error: 'rate_limited', retryAfterSec: secondsUntilUtcMidnight() }, 429);
+  }
+  // Atomic hard-cap reservation (worst case = both tiers), scoped to this IP;
+  // reconciled below. 'perip' → this visitor's daily $ budget is spent (429).
+  const reservation = await reserveSpend(ESTIMATE_USD, idHash);
   if (!reservation.allowed) {
+    if (reservation.reason === 'perip') {
+      return errorResponse({ error: 'rate_limited', retryAfterSec: secondsUntilUtcMidnight() }, 429);
+    }
     return errorResponse({ error: 'capacity' }, 503);
   }
 
@@ -89,15 +106,19 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     // Reconcile whatever we actually spent before failing, then report cleanly.
-    await reconcileSpend(spentUsd - ESTIMATE_USD);
+    await reconcileSpend(spentUsd - ESTIMATE_USD, idHash);
     // Key hit its limit → capacity, so the client can message it consistently.
     if (isQuotaError(err)) return errorResponse({ error: 'capacity' }, 503);
     return errorResponse({ error: 'server_error', message: 'Reveal failed.' }, 502);
   }
 
-  await reconcileSpend(spentUsd - ESTIMATE_USD);
+  await reconcileSpend(spentUsd - ESTIMATE_USD, idHash);
 
   return new Response(JSON.stringify(result), {
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      'set-cookie': sessionCookie(addSessionSpend(session, ESTIMATE_USD)),
+    },
   });
 }

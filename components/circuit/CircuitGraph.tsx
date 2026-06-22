@@ -6,7 +6,7 @@
 // force simulation, no Three.js. Fed by the same in-memory report as the table
 // view (no new fetch).
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphData } from '@/components/graph/types';
 import type { DecisionMaker, Employee } from '@/lib/types';
 import type { RevealFn } from '@/components/EmployeesTab';
@@ -18,6 +18,8 @@ import {
   cameraFor,
   ROOT,
   VIEW,
+  CENTER,
+  CAT_SLOT_MOBILE,
   type Bus,
   type SubNode,
   type OutDir,
@@ -25,6 +27,13 @@ import {
 
 const FONT = 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)';
 const TRACE = '#cfdcea'; // neutral trunk/trace color
+const MIN_SCALE = 0.4;
+const MAX_SCALE = 3.0;
+const PAN_LIMIT = VIEW * 1.5; // max pan offset in SVG units (~2100)
+
+function getInitials(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase();
+}
 
 interface RevealState { loading: boolean; tried: boolean; email: string | null; phone: string | null; }
 
@@ -80,10 +89,15 @@ function Chip({ cx, cy, color }: { cx: number; cy: number; color: string }) {
 // ---------------------------------------------------------------------------
 function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number; color: string; node: SubNode; active: boolean; onClick: () => void }) {
   const S = 52;
+  const TAP = 72; // invisible hit area — larger for touch
   const label = node.label.length > 16 ? node.label.slice(0, 15) + '…' : node.label;
   const photo = node.person?.photo ?? node.employee?.photo ?? null;
+  const hasPerson = node.kind === 'person' || node.kind === 'employee';
+  const initials = hasPerson ? getInitials(node.label) : null;
   return (
     <g style={{ cursor: 'pointer' }} onClick={onClick} className="circ-chip">
+      {/* larger invisible rect for touch targets */}
+      <rect x={x - TAP / 2} y={y - TAP / 2} width={TAP} height={TAP} fill="transparent" />
       <rect x={x - S / 2} y={y - S / 2} width={S} height={S} fill={active ? color : '#05070b'} opacity={active ? 0.16 : 0.9} />
       <Corners x={x - S / 2} y={y - S / 2} w={S} h={S} len={11} color={color} sw={active ? 2.4 : 1.6} />
       {photo ? (
@@ -93,6 +107,14 @@ function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number
           </defs>
           <image href={photo} x={x - 18} y={y - 18} width={36} height={36} clipPath={`url(#cp-${node.id})`} preserveAspectRatio="xMidYMid slice" />
           <circle cx={x} cy={y} r={18} fill="none" stroke={color} strokeWidth={1.2} opacity={0.6} />
+        </g>
+      ) : initials ? (
+        <g>
+          <circle cx={x} cy={y} r={18} fill={color} opacity={0.15} />
+          <circle cx={x} cy={y} r={18} stroke={color} strokeWidth={1.4} fill="none" opacity={0.7} />
+          <text x={x} y={y + 5} textAnchor="middle" fontFamily={FONT} fontSize={13} fontWeight="600" fill={color} opacity={0.9}>
+            {initials}
+          </text>
         </g>
       ) : (
         <Chip cx={x} cy={y} color={color} />
@@ -111,16 +133,135 @@ export default function CircuitGraph({
   data,
   onReveal,
   onSearchCompany,
+  onSwitchToTable,
 }: {
   data: GraphData;
   onReveal: RevealFn;
   onSearchCompany: (domain: string) => void;
   onSwitchToTable?: () => void;
 }) {
-  const buses = useMemo(() => buildBuses(data), [data]);
+  // Detect mobile viewport to switch to two-column layout (< 768px).
+  // Initialized synchronously (ssr:false component) to avoid a layout flash.
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  const buses = useMemo(() => buildBuses(data, isMobile ? CAT_SLOT_MOBILE : undefined), [data, isMobile]);
   const [focused, setFocused] = useState<Bus | null>(null);
   const [selected, setSelected] = useState<{ node: SubNode; color: string } | null>(null);
   const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
+
+  // User-controlled pan/zoom for touch (on top of the camera transform).
+  const [userTransform, setUserTransform] = useState({ tx: 0, ty: 0, scale: 1 });
+  const utRef = useRef({ tx: 0, ty: 0, scale: 1 });
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Non-passive touch listeners for pan + pinch-to-zoom, plus desktop wheel zoom.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+
+    let lastSingle: { x: number; y: number } | null = null;
+    let lastDist: number | null = null;
+    let lastMid: { x: number; y: number } | null = null;
+
+    // Convert CSS pixels to SVG user units.
+    function svgFactor(): number {
+      const r = el!.getBoundingClientRect();
+      return r.width > 0 ? VIEW / r.width : 1;
+    }
+
+    // Apply incremental pan in SVG units with clamping.
+    function applyPan(dx: number, dy: number) {
+      const { tx, ty, scale } = utRef.current;
+      utRef.current = {
+        scale,
+        tx: Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, tx + dx)),
+        ty: Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, ty + dy)),
+      };
+      setUserTransform({ ...utRef.current });
+    }
+
+    // Zoom to a specific SVG-space point (cx, cy) by factor k.
+    // Model: transform-origin is CENTER, so display pos = CENTER + (p - CENTER)*s + tx.
+    // To keep (cx,cy) fixed: newTx = tx + (cx - CENTER)*(s - newS).
+    function applyZoom(cx: number, cy: number, k: number) {
+      const { tx, ty, scale } = utRef.current;
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * k));
+      const newTx = Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, tx + (cx - CENTER) * (scale - newScale)));
+      const newTy = Math.max(-PAN_LIMIT, Math.min(PAN_LIMIT, ty + (cy - CENTER) * (scale - newScale)));
+      utRef.current = { tx: newTx, ty: newTy, scale: newScale };
+      setUserTransform({ ...utRef.current });
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        lastSingle = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastDist = null;
+        lastMid = null;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastDist = Math.hypot(dx, dy);
+        lastMid = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
+        lastSingle = null;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const f = svgFactor();
+      if (e.touches.length === 1 && lastSingle) {
+        const dx = (e.touches[0].clientX - lastSingle.x) * f;
+        const dy = (e.touches[0].clientY - lastSingle.y) * f;
+        applyPan(dx, dy);
+        lastSingle = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2 && lastDist !== null && lastMid) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const newDist = Math.hypot(dx, dy);
+        const k = Math.max(0.9, Math.min(1.1, newDist / lastDist));
+        const r = el!.getBoundingClientRect();
+        const newMid = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
+        const cx = (newMid.x - r.left) * f;
+        const cy = (newMid.y - r.top) * f;
+        applyZoom(cx, cy, k);
+        lastDist = newDist;
+        lastMid = newMid;
+      }
+    };
+
+    const onTouchEnd = () => {
+      lastSingle = null;
+      lastDist = null;
+      lastMid = null;
+    };
+
+    // Desktop: scroll wheel zooms toward cursor position.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const f = svgFactor();
+      const r = el!.getBoundingClientRect();
+      const cx = (e.clientX - r.left) * f;
+      const cy = (e.clientY - r.top) * f;
+      const k = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      applyZoom(cx, cy, k);
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
 
   const cam = cameraFor(focused?.slot ?? null);
 
@@ -130,15 +271,25 @@ export default function CircuitGraph({
     return { nodes, links, buses: buses.length };
   }, [buses]);
 
+  const resetUserTransform = useCallback(() => {
+    const zero = { tx: 0, ty: 0, scale: 1 };
+    utRef.current = zero;
+    setUserTransform(zero);
+  }, []);
+
+  // Reset to root view and restore default zoom/pan.
   const reset = useCallback(() => {
     setFocused(null);
     setSelected(null);
-  }, []);
+    resetUserTransform();
+  }, [resetUserTransform]);
 
+  // Toggle bus focus: tap once to drill in, tap again (or ROOT) to return.
   const focusBus = useCallback((b: Bus) => {
-    setFocused((cur) => (cur?.cat === b.cat ? cur : b));
+    setFocused((cur) => (cur?.cat === b.cat ? null : b));
     setSelected(null);
-  }, []);
+    resetUserTransform();
+  }, [resetUserTransform]);
 
   const reveal = useCallback(
     async (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => {
@@ -157,9 +308,9 @@ export default function CircuitGraph({
   const rootLabel = company?.name || data.domain;
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black/85 text-white" style={{ fontFamily: FONT }}>
+    <div className="absolute inset-0 overflow-hidden bg-black/15 text-white" style={{ fontFamily: FONT }}>
       {/* ---------------- schematic ---------------- */}
-      <svg viewBox={`0 0 ${VIEW} ${VIEW}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full">
+      <svg ref={svgRef} viewBox={`0 0 ${VIEW} ${VIEW}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 h-full w-full" style={{ touchAction: 'none' }}>
         <defs>
           <filter id="cglow" x="-60%" y="-60%" width="220%" height="220%">
             <feGaussianBlur stdDeviation="3.2" result="b" />
@@ -175,6 +326,8 @@ export default function CircuitGraph({
 
         <rect x={0} y={0} width={VIEW} height={VIEW} fill="url(#cgrid)" opacity={0.5} />
 
+        {/* User pan/zoom layer (touch-driven, resets on bus focus change) */}
+        <g style={{ transform: `translate(${userTransform.tx}px, ${userTransform.ty}px) scale(${userTransform.scale})`, transformOrigin: `${CENTER}px ${CENTER}px` }}>
         <g
           style={{
             transform: `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.scale})`,
@@ -219,7 +372,7 @@ export default function CircuitGraph({
                   </text>
                   {/* outer connector terminal */}
                   <rect
-                    x={(b.slot === 'left' || b.slot === 'bottomLeft' ? r.x - 12 : r.x + r.w + 2)}
+                    x={(b.slot === 'left' || b.slot === 'bottomLeft' || b.slot === 'mLeft1' || b.slot === 'mLeft2' || b.slot === 'mLeft3' ? r.x - 12 : r.x + r.w + 2)}
                     y={r.cy - 5}
                     width={10}
                     height={10}
@@ -230,11 +383,13 @@ export default function CircuitGraph({
             );
           })}
 
-          {/* focused cluster grid */}
-          {focused && <ClusterGrid key={focused.cat} bus={focused} onPick={(node) => setSelected({ node, color: focused.color })} selectedId={selected?.node.id ?? null} />}
+          {/* focused cluster grid — tap a chip to open detail panel, tap again to close */}
+          {focused && <ClusterGrid key={focused.cat} bus={focused} onPick={(node) => setSelected((s) => s?.node.id === node.id ? null : { node, color: focused.color })} selectedId={selected?.node.id ?? null} />}
 
-          {/* root node */}
-          <g style={{ cursor: focused ? 'pointer' : 'default' }} onClick={focused ? reset : undefined}>
+          {/* root node — always tappable: resets view (unfocus + restore zoom/pan) */}
+          <g style={{ cursor: 'pointer' }} onClick={reset}>
+            {/* invisible extended tap target */}
+            <rect x={ROOT.x - ROOT.s / 2 - 20} y={ROOT.y - ROOT.s / 2 - 20} width={ROOT.s + 40} height={ROOT.s + 40} fill="transparent" />
             <rect x={ROOT.x - ROOT.s / 2} y={ROOT.y - ROOT.s / 2} width={ROOT.s} height={ROOT.s} fill="#05070b" stroke="#ffffff" strokeWidth={2} filter="url(#cglow)" />
             <Corners x={ROOT.x - ROOT.s / 2 - 7} y={ROOT.y - ROOT.s / 2 - 7} w={ROOT.s + 14} h={ROOT.s + 14} len={20} color="#ffffff" sw={2.4} />
             {/* chip logo */}
@@ -250,24 +405,11 @@ export default function CircuitGraph({
             </text>
           </g>
         </g>
+        {/* close user pan/zoom layer */}
+        </g>
       </svg>
 
       {/* ---------------- chrome overlays (fixed, do not pan) ---------------- */}
-      {/* top-left: title + overview */}
-      <div className="absolute top-5 left-6 select-none pointer-events-none">
-        <div className="text-[0.7rem] tracking-[0.32em] text-[#5b6b82]">RELATIONSHIP MAP</div>
-        <div className="text-2xl tracking-wide text-white mt-1 mb-3">{rootLabel}</div>
-        <div className="border w-[260px]" style={{ borderColor: '#1c2940' }}>
-          <div className="px-4 py-3" style={{ borderColor: '#1c2940' }}>
-            <div className="text-[0.66rem] tracking-[0.28em] text-[#5b6b82] mb-3">NETWORK OVERVIEW</div>
-            <StatRow k="NODES" v={stats.nodes.toLocaleString()} accent="#22d3ee" />
-            <StatRow k="LINKS" v={stats.links.toLocaleString()} accent="#22d3ee" />
-            <StatRow k="BUSES" v={String(stats.buses)} accent="#22d3ee" />
-            <div className="h-px my-2" style={{ background: '#1c2940' }} />
-            <StatRow k="STATUS" v="OPERATIONAL" accent="#34d399" />
-          </div>
-        </div>
-      </div>
 
       {/* breadcrumb */}
       <div className="absolute top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 text-[0.72rem] tracking-[0.22em]">
@@ -281,6 +423,17 @@ export default function CircuitGraph({
           </>
         )}
       </div>
+
+      {/* mobile: back to summary button (bottom-left, only on narrow screens) */}
+      {onSwitchToTable && (
+        <button
+          onClick={onSwitchToTable}
+          className="sm:hidden absolute bottom-6 left-4 text-[#5b6b82] text-[0.68rem] tracking-[0.18em] border border-[#1c2940] px-3 py-2 bg-[#050a12]/90 backdrop-blur-sm active:text-white active:border-[#3b82f6]"
+          style={{ fontFamily: FONT }}
+        >
+          ← SUMMARY
+        </button>
+      )}
 
       {/* right detail panel */}
       <DetailPanel
@@ -359,12 +512,21 @@ function DetailPanel({
   const node = selected?.node;
   const color = selected?.color ?? '#22d3ee';
 
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   return (
     <div
-      className="fixed sm:absolute inset-0 sm:inset-auto sm:top-0 sm:right-0 sm:h-full sm:w-[360px] z-50 bg-black/98 sm:bg-black/95 backdrop-blur-sm border-t sm:border-t-0 sm:border-l overflow-y-auto"
+      className={`fixed z-50 bg-[#050a12] overflow-y-auto ${isMobile ? 'bottom-0 left-0 right-0 rounded-t-lg border-t' : 'sm:absolute sm:top-0 sm:right-0 sm:h-full sm:w-[360px] border-l'}`}
       style={{
         borderColor: '#1c2940',
-        transform: open ? 'translateX(0)' : 'translateX(100%)',
+        height: isMobile ? '65vh' : undefined,
+        transform: open ? 'translate(0)' : isMobile ? 'translateY(100%)' : 'translateX(100%)',
         transition: 'transform 0.45s cubic-bezier(.4,0,.2,1)',
       }}
     >
@@ -428,7 +590,7 @@ function kindLabel(k: SubNode['kind']): string {
   return { person: 'DECISION-MAKER', employee: 'EMPLOYEE', department: 'DEPARTMENT', competitor: 'COMPETITOR', tech: 'TECHNOLOGY', funding: 'FUNDING ROUND' }[k];
 }
 
-function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact }: { id: string; color: string; ceId?: string | null; linkedin?: string | null; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState; noContact?: boolean }) {
+function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact, inlineEmail }: { id: string; color: string; ceId?: string | null; linkedin?: string | null; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState; noContact?: boolean; inlineEmail?: string | null }) {
   const got = st?.email || st?.phone;
   return (
     <div className="mt-4">
@@ -436,6 +598,25 @@ function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact }: { id:
         <div className="text-[0.76rem] space-y-1">
           {st?.email && <div style={{ color }} className="break-all">{st.email}</div>}
           {st?.phone && <div style={{ color }}>{st.phone}</div>}
+        </div>
+      ) : inlineEmail ? (
+        // Tomba filler row: a pattern-derived address, free but unverified. Show
+        // it labeled, and still offer Enrich to verify deliverability / add phone.
+        <div className="text-[0.76rem] space-y-1">
+          <div style={{ color }} className="break-all">{inlineEmail}</div>
+          <div className="text-[0.6rem] tracking-[0.18em] text-[#5b6b82]">UNVERIFIED · LIKELY MATCH</div>
+          {st?.tried ? (
+            <div className="text-[0.68rem] text-[#5b6b82]">NO VERIFIED CONTACT FOUND.</div>
+          ) : (
+            <button
+              onClick={() => reveal(id, { ceId, linkedin })}
+              disabled={st?.loading}
+              className="mt-2 w-full text-[0.72rem] tracking-[0.12em] border px-3 py-2 hover:bg-white/5 disabled:opacity-50"
+              style={{ borderColor: color, color }}
+            >
+              {st?.loading ? 'VERIFYING…' : 'VERIFY / ADD PHONE →'}
+            </button>
+          )}
         </div>
       ) : st?.tried ? (
         <div className="text-[0.72rem] text-[#5b6b82]">NO CONTACT FOUND.</div>
@@ -455,13 +636,26 @@ function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact }: { id:
   );
 }
 
+function InitialsAvatar({ name, color }: { name: string; color: string }) {
+  return (
+    <div
+      className="w-16 h-16 flex items-center justify-center text-lg font-mono font-bold mb-3 shrink-0"
+      style={{ background: `${color}1a`, border: `1px solid ${color}50`, color, fontFamily: FONT }}
+    >
+      {getInitials(name)}
+    </div>
+  );
+}
+
 function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
   const noContact = !person.hasWorkEmail && !person.hasPersonalEmail && !person.hasPhone;
   return (
     <div>
-      {person.photo && (
+      {person.photo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={person.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
+      ) : (
+        <InitialsAvatar name={person.name} color={color} />
       )}
       <PRow k="TITLE" v={person.title} />
       <PRow k="FUNCTION" v={person.jobFunction} />
@@ -501,9 +695,11 @@ function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; 
 function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
   return (
     <div>
-      {emp.photo && (
+      {emp.photo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={emp.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
+      ) : (
+        <InitialsAvatar name={emp.fullName} color={color} />
       )}
       <PRow k="TITLE" v={emp.title} />
       <PRow k="DEPARTMENT" v={emp.department} />
@@ -515,7 +711,7 @@ function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: strin
           LINKEDIN ↗
         </a>
       )}
-      <RevealBlock id={id} color={color} ceId={emp.ceId} linkedin={emp.linkedin} reveal={reveal} st={st} />
+      <RevealBlock id={id} color={color} ceId={emp.ceId} linkedin={emp.linkedin} reveal={reveal} st={st} inlineEmail={emp.emailUnverified ? emp.email : null} />
     </div>
   );
 }

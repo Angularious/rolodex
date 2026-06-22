@@ -44,6 +44,17 @@ the user's keys; it's already gitignore'd so it never gets committed.
   scale.com). Aviato rounds are sanity-filtered in `lib/aviato.ts` (drop rows raising
   more than the company's max known valuation + acquisition/IPO-shaped rows — this
   is what kills Aviato mislabelling, e.g. the $20B Adobe deal as a "Venture Round").
+  **Employee augment:** the `employees` section is CE `/people/search` FIRST, then —
+  when the CE list is shorter than `EMPLOYEE_LIST_MAX` (default 15) — topped up with
+  **Tomba `/v1/domain-search`** (flat $0.01, up to 50, emails inline). Tomba rows are
+  mapped to the same `Employee` shape, `source:'tomba'` + `emailUnverified:true`, and
+  **deduped against CE by normalized LinkedIn URL then full name** (`mergeEmployees`
+  in `lib/tomba.ts`) so no CE profile is duplicated. Tomba rows have **no photo / city
+  / startDate / ceId** (Tomba doesn't return them) and their emails are unverified
+  pattern guesses — the UI labels them "unverified · likely" and still offers Enrich
+  (ContactOut by LinkedIn) to verify / add a phone. Tomba failure keeps the CE-only
+  list. This is an AUGMENT (not the replacement option) — it adds $0.01, doesn't cut
+  cost; it trades a penny for breadth + free (unverified) emails.
 - **`/api/reveal`** is the on-demand email/phone route (per-click, not streamed).
   Same gating as search. Tiered: Company Enrich `/people/email` by person id ($0.12)
   → fall back to ContactOut `/v1/linkedin/enrich` ($0.55). Records real dollar cost.
@@ -106,13 +117,24 @@ Per Orthogonal's data policy, **returned company/people data is NEVER persisted*
 Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
-Cost: ≈ **$0.38/search** at 10 employees (profile $0.012 + workforce $0.061 +
-people×10 $0.245 + competitors $0.01 + decision-makers $0.05). `PAGE_SIZE` in
-`app/api/search/route.ts` is the cost knob (per-result $0.0245); the people-search
-line dominates. **`DM_PAGE_SIZE` is decoupled from `PAGE_SIZE`** — the
-decision-makers call is a flat $0.05 regardless of `per_page` (`reveal_info=false`),
-so it stays at 25 to surface more decision-makers for free; only the employee
-people-search scales with count. **Funding fallback (Aviato $0.08) fires when
+Cost: ≈ **$0.34/search** at `PAGE_SIZE=8` (profile $0.012 + workforce $0.061 +
+people×8 $0.196 + competitors $0.01 + decision-makers $0.05 + Tomba employee-augment
+$0.01 when the CE list is thin). `PAGE_SIZE` (env
+`EMPLOYEE_PAGE_SIZE`, default 8, in `app/api/search/route.ts`) is the cost knob
+(per-result $0.0245); the people-search line dominates. **The ledger charges the
+REQUESTED `PAGE_SIZE`, not the returned count** — CE bills on requested page size,
+so charging the returned count let the hard cap pass ~25-35% more real spend than
+it recorded (verified: figma returns 6 for a request of 8). **`DM_PAGE_SIZE` is
+decoupled from `PAGE_SIZE`** — the decision-makers call is a flat $0.05 regardless
+of `per_page` (`reveal_info=false`), so it stays at 25 to surface more
+decision-makers for free; only the employee people-search scales with count.
+**Capacity under a hard $20 cap: ~45–58 full searches/day total** (worst-case
+reservation $0.44 → ~45; typical search $0.34 → ~58), shared across all visitors —
+so ~100 users each running one real search does NOT fit in $20; the per-IP and
+per-session caps decide who gets served and stop one actor taking it all. (NOTE: the
+Tomba employee augment we chose ADDS $0.01 for breadth; the alternative — REPLACING
+CE people-search with Tomba — would instead cut ~$0.19/search → ~140 searches/$20,
+at the cost of verified-email quality. Revisit if the $20 ceiling needs to stretch.) **Funding fallback (Aviato $0.08) fires when
 CE rounds are missing dollar amounts** (no rounds, or rounds with null amounts), so
 it adds to a search's cost (≈ $0.46) only on those; worst case is reserved up front
 in `ESTIMATE_USD`.
@@ -145,7 +167,8 @@ Reveals are billed on demand on top:
 - **Spend ledger is in DOLLARS** — reserve/reconcile pass dollar amounts (per-call
   prices vary by provider). Don't revert to a flat per-call multiplier.
 - Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
-  `lib/contactout.ts` (decision-makers/reveal), `lib/tomba.ts` (similar only),
+  `lib/contactout.ts` (decision-makers/reveal), `lib/tomba.ts` (similar +
+  domain-search employee augment),
   `lib/aviato.ts` (funding-rounds fallback, with sanity filter).
 - Data quality varies by domain. Good demo targets (verified): stripe.com,
   google.com, spacex.com, figma.com.
@@ -153,9 +176,16 @@ Reveals are billed on demand on top:
 ## Supabase (the persistent store)
 - Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (service-role, server-only).
 - Run `supabase/schema.sql` once in the SQL editor. Tables: `rate_events`,
-  `spend_events`, `search_events`. Functions: `check_and_log_rate` (advisory-locked),
-  `day_spend`, `record_spend`, `reserve_spend` (atomic hard cap). Prod DB is current;
-  **if you recreate the project, run the full `supabase/schema.sql`.**
+  `spend_events` (now incl. an `ip_hash` column for the per-IP sub-cap),
+  `search_events`. Functions: `check_and_log_rate` (advisory-locked), `day_spend`,
+  `record_spend(p_cost,p_site,p_ip)`, `reserve_spend(p_estimate,p_cap,p_site,p_ip,p_ip_cap)`
+  (atomic hard cap + per-IP sub-cap). **MIGRATION REQUIRED before deploying the
+  per-IP-cap code:** re-run `supabase/schema.sql` (idempotent — adds the `ip_hash`
+  column + drops/recreates the two functions with their new signatures). The code
+  calls the 5-arg `reserve_spend` / 3-arg `record_spend`; if the DB still has the old
+  signatures the RPC errors and `reserveSpend` fails CLOSED → 503s. `p_ip`/`p_ip_cap`
+  are defaulted, so siblings calling the old arity keep working.
+  **If you recreate the project, run the full `supabase/schema.sql`.**
 - **All 4 functions have `set search_path = public, pg_temp` pinned** (clears the
   Supabase "Function Search Path Mutable" linter warning; applied live 2026-06-17).
   It's baked into the `create or replace` blocks in `schema.sql`, so a fresh recreate
@@ -171,9 +201,13 @@ Reveals are billed on demand on top:
     cap.
   - **Analytics — ISOLATED.** `search_events` rows are tagged `site`; `/admin`
     (`recentEvents`) filters to `SITE_ID`.
-  - **Rate limit — STILL POOLED (intentional).** `rate_events`/`check_and_log_rate`
-    are keyed by hashed IP only; a visitor's per-IP budget is shared across sibling
-    demos. That's conservative (good for abuse protection), so left as-is.
+  - **Rate limit — NOW ISOLATED (changed 2026-06-22).** `rate_events` gained a
+    `site` column and `check_and_log_rate` takes an optional `p_site`; rolodex passes
+    `SITE_ID`, so its per-IP windows count only its own rows. (Was intentionally
+    pooled, but rolodex loosened its limits to 30/300/1000 for shared/NAT networks —
+    pooling would have flooded the shared ledger and tripped siblings' tighter limits.
+    Scoping mirrors the spend design.) Siblings passing no `p_site` keep legacy pooled
+    behavior (count ALL rows) until they adopt their own `SITE_ID`.
   - **Back-compat:** `p_site = NULL` means "sum ALL rows" (legacy), so sibling
     sites that DON'T pass a site keep their old pooled behavior unchanged. Until a
     sibling adopts its own `SITE_ID`, its cap still counts rolodex's tagged rows;
@@ -199,20 +233,45 @@ Reveals are billed on demand on top:
   OPEN (spend cap is the backstop).
 
 ## Abuse protection (no CAPTCHA)
-Cloudflare Turnstile was **removed** (2026-06-15) — no bot-challenge box. Three
+Cloudflare Turnstile was **removed** (2026-06-15) — no bot-challenge box. Layered
 code-level defenses guard **both** money-spending routes (`/api/search`,
-`/api/reveal`) via `lib/guard.ts`:
+`/api/reveal`) via `lib/guard.ts` / `lib/spend.ts` / `lib/session.ts`. Design
+principle: the **$ caps are the money guard**, so the request-rate limit can stay
+loose enough that shared/NAT'd networks (a whole school/office on one public IP)
+aren't request-blocked. In order:
 1. **Origin lock** — `originAllowed()` rejects cross-origin POSTs (403). Allows
    requests whose `Origin` matches the serving host, or the explicit
    `ALLOWED_ORIGIN` env var. Stops other sites calling/embedding our API.
-2. **Per-IP rate limit** — Supabase-backed, 12/min · 60/hr · 120/day per hashed
-   IP. Competitor click-throughs count. Fails OPEN on DB error (`lib/ratelimit.ts`).
-3. **Global daily spend cap** — `DAILY_SPEND_CAP_USD` (default $20). **Atomic hard
+2. **Bot-UA filter** — `isBotUserAgent()` blocks empty / obviously-scripted UAs.
+3. **Per-IP rate limit** — Supabase-backed, coarse anti-burst only (NOT the money
+   guard). Defaults **30/min · 300/hr · 1000/day** per hashed IP, env-tunable via
+   `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY` (loosened from 12/60/120 so NAT'd
+   networks don't hit a wall now that $ is capped per-IP). Competitor click-throughs
+   count. Fails OPEN on DB error (`lib/ratelimit.ts`).
+4. **Per-session (cookie) budget** — `lib/session.ts`. A signed (HMAC) cookie holds
+   each browser's running daily $ total; `SESSION_DAILY_USD` (default $3) is the
+   per-browser allowance. NAT-friendly (each browser gets its own budget, doesn't
+   penalize a shared IP) but SOFT — bypassable by clearing cookies, so it's a
+   fairness guard, not a hard stop. Sign key = `SESSION_SECRET` (falls back to
+   `IP_HASH_SALT`). A bad signature / stale UTC day resets to a fresh budget. Bumps
+   by the worst-case estimate; over-budget → 429 `rate_limited` until UTC midnight.
+5. **Per-IP daily spend sub-cap** — `PER_IP_DAILY_USD` (default $5), enforced
+   atomically inside `reserve_spend` (per-IP sum of today's `spend_events.ip_hash`,
+   under the same advisory lock as the global cap). The HARD per-visitor backstop:
+   one IP can't take more than its slice of the global cap. `<=0` disables it.
+   Rejection returns `reason:'perip'` → mapped to a 429 (vs `'global'` → 503).
+6. **Global daily spend cap** — `DAILY_SPEND_CAP_USD` (default $20). **Atomic hard
    cap**: each request RESERVES its worst-case cost up front via the `reserve_spend`
    RPC (serialized by a Postgres advisory lock), then reconciles to the real cost
-   after (`reserveSpend`/`reconcileSpend` in `lib/spend.ts`). This holds under
-   concurrent bursts — the old check-then-record flow was only a soft cap that a
-   burst of parallel requests could blow past. Fails CLOSED on DB error.
+   after (`reserveSpend`/`reconcileSpend` in `lib/spend.ts`). Holds under concurrent
+   bursts. Fails CLOSED on DB error. **Reconciliation rows carry the same `ip_hash`
+   as the reservation** so the per-IP daily sum nets to true per-visitor spend.
+
+**Tradeoff to remember:** under a hard $20 global cap a shared NAT network can't be
+fully served regardless of knobs (the money runs out at ~50-60 searches/day total).
+The per-IP cap spreads the budget across visitors; raise `PER_IP_DAILY_USD` if
+serving more users on one shared IP matters more than even spread. The session
+cookie is the only NAT-friendly per-user lever, but it's soft.
 
 Do NOT re-add Turnstile/CAPTCHA without asking — the user explicitly removed it
 (the box was annoying). If distributed bots become a problem, prefer Vercel
@@ -221,10 +280,13 @@ WAF/Firewall (dashboard-configured, no visible challenge) over a CAPTCHA.
 ## Product decisions (from the user)
 - **No company blocklist** — any real company is searchable. Only free-email
   providers / localhost / IPs are rejected as invalid input (`lib/normalize.ts`).
-- Rate limits: **12/min, 60/hr, 120/day** per IP (loosened from 3/10/30 so
-  exploring competitors doesn't lock users out). Competitor clicks count.
-- Spend cap: `DAILY_SPEND_CAP_USD` (code default 20; **prod set to 40**), editable.
-  UTC-day bucket. Atomic hard cap (reserve/reconcile) — see Abuse protection.
+- Rate limits: **30/min, 300/hr, 1000/day** per IP (env `RATE_PER_*`; loosened so
+  NAT'd shared networks aren't request-blocked — the $ caps are the money guard now).
+  Competitor clicks count.
+- Spend caps (all UTC-day buckets, atomic reserve/reconcile — see Abuse protection):
+  **global** `DAILY_SPEND_CAP_USD` (code default 20), **per-IP** `PER_IP_DAILY_USD`
+  (default $5, hard backstop), **per-session cookie** `SESSION_DAILY_USD` (default $3,
+  soft/NAT-friendly). All editable in Vercel env without a deploy.
 - **Reveal is gated by coverage**: decision-makers with all three coverage flags ✕
   (no work email / personal / phone) show a disabled, greyed "No contact available"
   button so a guaranteed-empty $0.55 reveal can't be triggered (PR #3). Employees

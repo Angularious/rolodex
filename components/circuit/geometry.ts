@@ -21,7 +21,7 @@ export type CircuitCat =
   | 'tech'
   | 'funding';
 
-export type SlotName = 'right' | 'left' | 'top' | 'bottom' | 'topRight' | 'bottomLeft';
+export type SlotName = 'right' | 'left' | 'top' | 'bottom' | 'topRight' | 'bottomLeft' | 'mLeft1' | 'mLeft2' | 'mLeft3' | 'mRight1' | 'mRight2' | 'mRight3';
 export type OutDir = 'right' | 'left' | 'up' | 'down';
 
 export type SubKind = 'department' | 'person' | 'competitor' | 'employee' | 'tech' | 'funding';
@@ -89,6 +89,18 @@ const CAT_SLOT: Record<CircuitCat, SlotName> = {
   funding: 'bottomLeft',
 };
 
+// Mobile two-column layout (< 768px): 3 buses stacked per side flanking the center.
+// Left: Decision-Makers (top) · Departments (middle) · Funding (bottom)
+// Right: Tech Stack (top) · Employee List (middle) · Competitors (bottom)
+export const CAT_SLOT_MOBILE: Record<CircuitCat, SlotName> = {
+  decisionMakers: 'mLeft1',
+  departments:    'mLeft2',
+  funding:        'mLeft3',
+  tech:           'mRight1',
+  employees:      'mRight2',
+  competitors:    'mRight3',
+};
+
 export const SLOT_POS: Record<SlotName, [number, number]> = {
   right: [1086, 700],
   left: [314, 700],
@@ -96,6 +108,13 @@ export const SLOT_POS: Record<SlotName, [number, number]> = {
   bottom: [700, 1100],
   topRight: [1086, 348],
   bottomLeft: [314, 1052],
+  // Mobile two-column layout (< 768px viewport)
+  mLeft1: [280, 330],    // left col top
+  mLeft2: [280, 700],    // left col middle (same y as root)
+  mLeft3: [280, 1070],   // left col bottom
+  mRight1: [1120, 330],  // right col top
+  mRight2: [1120, 700],  // right col middle
+  mRight3: [1120, 1070], // right col bottom
 };
 
 export const SLOT_OUT: Record<SlotName, OutDir> = {
@@ -105,15 +124,22 @@ export const SLOT_OUT: Record<SlotName, OutDir> = {
   bottom: 'down',
   topRight: 'right',
   bottomLeft: 'left',
+  mLeft1: 'left',
+  mLeft2: 'left',
+  mLeft3: 'left',
+  mRight1: 'right',
+  mRight2: 'right',
+  mRight3: 'right',
 };
 
 // ---------------------------------------------------------------------------
 // Build the bus list from loaded data — only categories with data appear.
 // ---------------------------------------------------------------------------
-export function buildBuses(d: GraphData): Bus[] {
+export function buildBuses(d: GraphData, slotMap?: Record<CircuitCat, SlotName>): Bus[] {
+  const map = slotMap ?? CAT_SLOT;
   const out: Bus[] = [];
   const push = (cat: CircuitCat, nodes: SubNode[], count = nodes.length) => {
-    if (nodes.length) out.push({ cat, title: CAT_TITLE[cat], count, color: CIRCUIT_COLOR[cat], slot: CAT_SLOT[cat], nodes });
+    if (nodes.length) out.push({ cat, title: CAT_TITLE[cat], count, color: CIRCUIT_COLOR[cat], slot: map[cat], nodes });
   };
 
   const dms = d.decisionMakers ?? [];
@@ -190,6 +216,16 @@ function busInner(slot: SlotName): Pt {
     case 'bottom': return { x: r.cx, y: r.y };
     case 'topRight': return { x: r.x, y: r.cy }; // entered on the left, grid extends right
     case 'bottomLeft': return { x: r.x + r.w, y: r.cy }; // entered on the right, grid extends left
+    // Mobile left column: root-facing side is the right edge
+    case 'mLeft1':
+    case 'mLeft2':
+    case 'mLeft3':
+      return { x: r.x + r.w, y: r.cy };
+    // Mobile right column: root-facing side is the left edge
+    case 'mRight1':
+    case 'mRight2':
+    case 'mRight3':
+      return { x: r.x, y: r.cy };
   }
 }
 
@@ -252,6 +288,65 @@ export function trunk(slot: SlotName): Trunk {
       ticks,
       arrow: { x: e.x, y: e.y, dir: slot === 'top' ? 'down' : 'up' },
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mobile two-column layout slots
+  // ---------------------------------------------------------------------------
+  // Middle row — same y as root: straight horizontal double-line, like cardinals.
+  if (slot === 'mLeft2') {
+    const ms = { x: ROOT.x - ROOT.s / 2, y: ROOT.y };
+    const me = busInner(slot);
+    const mspan = Math.abs(me.x - ms.x);
+    for (let t = 0.28; t < 0.9; t += 0.18) ticks.push({ x1: ms.x - mspan * t, y1: ms.y - 7, x2: ms.x - mspan * t, y2: ms.y + 7 });
+    return { path: `M ${ms.x} ${ms.y} L ${me.x} ${me.y}`, from: ms, to: me, double: true, dots: [], vias: [{ x: ms.x - mspan * 0.5, y: ms.y }], ticks, arrow: { x: me.x, y: me.y, dir: 'right' } };
+  }
+  if (slot === 'mRight2') {
+    const ms = { x: ROOT.x + ROOT.s / 2, y: ROOT.y };
+    const me = busInner(slot);
+    const mspan = Math.abs(me.x - ms.x);
+    for (let t = 0.28; t < 0.9; t += 0.18) ticks.push({ x1: ms.x + mspan * t, y1: ms.y - 7, x2: ms.x + mspan * t, y2: ms.y + 7 });
+    return { path: `M ${ms.x} ${ms.y} L ${me.x} ${me.y}`, from: ms, to: me, double: true, dots: [], vias: [{ x: ms.x + mspan * 0.5, y: ms.y }], ticks, arrow: { x: me.x, y: me.y, dir: 'left' } };
+  }
+
+  // Top/bottom rows — depart root at offset y so traces fan out, then L-jog to bus.
+  // Each side uses a different jog-x for visual distinction (top: tighter to root,
+  // bottom: looser, so the bundle reads as three distinct circuit traces).
+  if (slot === 'mLeft1') {
+    // Left col top: depart root left edge ~50px above center, jog at x=500
+    const ms = { x: ROOT.x - ROOT.s / 2, y: ROOT.y - 50 };
+    const me = busInner(slot);
+    const jx = 500;
+    dots.push({ x: jx, y: ms.y }, { x: jx, y: me.y });
+    vias.push({ x: jx, y: (ms.y + me.y) / 2 });
+    return { path: `M ${ms.x} ${ms.y} L ${jx} ${ms.y} L ${jx} ${me.y} L ${me.x} ${me.y}`, from: ms, to: me, double: false, dots, vias, ticks, arrow: { x: me.x, y: me.y, dir: 'right' } };
+  }
+  if (slot === 'mLeft3') {
+    // Left col bottom: depart root left edge ~50px below center, jog at x=540
+    const ms = { x: ROOT.x - ROOT.s / 2, y: ROOT.y + 50 };
+    const me = busInner(slot);
+    const jx = 540;
+    dots.push({ x: jx, y: ms.y }, { x: jx, y: me.y });
+    vias.push({ x: jx, y: (ms.y + me.y) / 2 });
+    return { path: `M ${ms.x} ${ms.y} L ${jx} ${ms.y} L ${jx} ${me.y} L ${me.x} ${me.y}`, from: ms, to: me, double: false, dots, vias, ticks, arrow: { x: me.x, y: me.y, dir: 'right' } };
+  }
+  if (slot === 'mRight1') {
+    // Right col top: depart root right edge ~50px above center, jog at x=900
+    const ms = { x: ROOT.x + ROOT.s / 2, y: ROOT.y - 50 };
+    const me = busInner(slot);
+    const jx = 900;
+    dots.push({ x: jx, y: ms.y }, { x: jx, y: me.y });
+    vias.push({ x: jx, y: (ms.y + me.y) / 2 });
+    return { path: `M ${ms.x} ${ms.y} L ${jx} ${ms.y} L ${jx} ${me.y} L ${me.x} ${me.y}`, from: ms, to: me, double: false, dots, vias, ticks, arrow: { x: me.x, y: me.y, dir: 'left' } };
+  }
+  if (slot === 'mRight3') {
+    // Right col bottom: depart root right edge ~50px below center, jog at x=860
+    const ms = { x: ROOT.x + ROOT.s / 2, y: ROOT.y + 50 };
+    const me = busInner(slot);
+    const jx = 860;
+    dots.push({ x: jx, y: ms.y }, { x: jx, y: me.y });
+    vias.push({ x: jx, y: (ms.y + me.y) / 2 });
+    return { path: `M ${ms.x} ${ms.y} L ${jx} ${ms.y} L ${jx} ${me.y} L ${me.x} ${me.y}`, from: ms, to: me, double: false, dots, vias, ticks, arrow: { x: me.x, y: me.y, dir: 'left' } };
   }
 
   // diagonals: out of the root's top/bottom edge (offset to clear the cardinal

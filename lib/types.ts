@@ -86,6 +86,12 @@ export interface Employee {
   startedAt?: string | null; // ISO start date of the role at this company
   // Revealed on demand via /api/reveal; null until then.
   email?: string | null;
+  // True when `email` is an unverified, pattern-derived address (Tomba
+  // domain-search filler row) rather than a verified reveal. UI labels it.
+  emailUnverified?: boolean;
+  // Provenance — Tomba filler rows lack a photo / city / ceId and carry an
+  // unverified inline email; CE rows are the richer, verified-reveal source.
+  source?: 'company-enrich' | 'tomba';
 }
 
 export interface DecisionMaker {

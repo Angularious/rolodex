@@ -176,6 +176,22 @@ export default function EmployeesTab({
         </button>
       );
     if (st?.tried) return <span className="text-slate text-xs">not found</span>;
+    // Tomba filler row: a pattern-derived address shown for free. Label it clearly
+    // and still offer Reveal to confirm deliverability / add a phone.
+    if (e.email && e.emailUnverified)
+      return (
+        <div className="flex flex-col gap-0.5 items-start">
+          <button onClick={() => copyEmail(e.email!)} className="text-accent-soft underline break-all">
+            {e.email}
+          </button>
+          <span
+            className="text-[0.6rem] uppercase tracking-wide text-slate"
+            title="Pattern-derived address — not verified for deliverability"
+          >
+            unverified · likely
+          </span>
+        </div>
+      );
     return (
       <button
         onClick={() => reveal(e)}
