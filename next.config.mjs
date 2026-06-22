@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // We render all remote images with plain <img> (never next/image), so disable
+  // the on-the-fly image optimizer. This closes the /_next/image endpoint, which
+  // would otherwise fetch + re-encode arbitrary remote URLs (a DoS / proxy vector).
   images: {
-    remotePatterns: [{ protocol: 'https', hostname: '**' }],
+    unoptimized: true,
   },
-  // react-force-graph ships ESM that Next's client bundle needs transpiled.
-  transpilePackages: ['react-force-graph-3d'],
 };
 
 export default nextConfig;

@@ -12,6 +12,10 @@ const serif = Newsreader({
   style: ['normal', 'italic'],
   variable: '--font-serif',
   display: 'swap',
+  // Google optical-sizes this family ('newsreader16pt'), so next/font can't find
+  // it in its bundled metrics table and warns at build. We declare a Georgia
+  // fallback in tailwind.config.ts, so skip the auto metrics-override.
+  adjustFontFallback: false,
 });
 const sans = Instrument_Sans({
   subsets: ['latin'],

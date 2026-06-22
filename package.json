@@ -13,15 +13,12 @@
     "@vercel/analytics": "^2.0.1",
     "next": "^14.2.35",
     "react": "^18",
-    "react-dom": "^18",
-    "react-force-graph-3d": "^1.29.1",
-    "three": "^0.169.0"
+    "react-dom": "^18"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/three": "^0.169.0",
     "autoprefixer": "^10",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",

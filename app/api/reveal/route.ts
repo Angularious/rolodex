@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 const PRICE = {
-  ceEmail: 0.1225, // company-enrich /people/email
+  ceEmail: 0.12, // company-enrich /people/email
   contactout: 0.55, // contactout /v1/linkedin/enrich
 };
 

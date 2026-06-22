@@ -16,12 +16,6 @@ export function timeAgo(iso?: string | null): string | null {
   return `${months} month${months === 1 ? '' : 's'} ago`;
 }
 
-export function confidenceClass(score: number): string {
-  if (score >= 80) return 'badge-green';
-  if (score >= 50) return 'badge-yellow';
-  return 'badge-red';
-}
-
 let regionNames: Intl.DisplayNames | null = null;
 export function countryName(code: string): string {
   if (!code) return code;
@@ -31,11 +25,4 @@ export function countryName(code: string): string {
   } catch {
     return code.toUpperCase();
   }
-}
-
-export function flagEmoji(code: string): string {
-  if (!code || code.length !== 2) return '🏳️';
-  const base = 0x1f1e6;
-  const cc = code.toUpperCase();
-  return String.fromCodePoint(base + (cc.charCodeAt(0) - 65), base + (cc.charCodeAt(1) - 65));
 }

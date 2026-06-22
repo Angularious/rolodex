@@ -87,12 +87,25 @@ export function mapAviatoFunding(
     ...rounds.map(valuationOf).filter((v): v is number => typeof v === 'number'),
   );
 
+  // Backstop for when NO round carries a valuation (then maxVal is 0 and the
+  // valuation filter below can't fire): a mislabeled acquisition/IPO row shows
+  // up as a single raise that dwarfs every real round (e.g. a $20B "Venture
+  // Round" alongside $50M–$300M rounds). Cap at 8× the next-largest priced
+  // round so that outlier is dropped; with ≤1 priced round we can't tell, so we
+  // leave it (NON_ROUND_RE still guards named acquisitions/IPOs).
+  const pricedDesc = rounds
+    .map((r) => r.moneyRaised ?? 0)
+    .filter((a) => a > 0)
+    .sort((a, b) => b - a);
+  const outlierCeiling = !maxVal && pricedDesc.length > 1 ? pricedDesc[1] * 8 : 0;
+
   const clean = rounds
     .filter((r) => {
       const amt = r.moneyRaised ?? 0;
       if (amt <= 0) return false;
       if (NON_ROUND_RE.test(r.stage ?? '') || NON_ROUND_RE.test(r.name ?? '')) return false;
       if (maxVal && amt > maxVal) return false; // raise > max valuation = bad row
+      if (outlierCeiling && amt > outlierCeiling) return false; // dwarfs every other round
       return true;
     })
     .sort((a, b) => Date.parse(b.announcedOn ?? '') - Date.parse(a.announcedOn ?? ''));
