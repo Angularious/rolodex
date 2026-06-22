@@ -4,15 +4,28 @@ Public demo: enter a company **domain or name** → instant streamed intelligenc
 report (profile + funding + tech stack, department headcount, employees, decision-
 makers, competitors). Data from **Company Enrich** (firmographics, funding, tech,
 workforce, people) + **ContactOut** (decision-makers, on-demand email/phone reveal)
-+ **Tomba** (competitors only), all via the Orthogonal API. Retro Cartoon-Network
-aesthetic. "Powered by orthogonal.com" demo — not Orthogonal-owned branding.
++ **Tomba** (competitors + a $0.01 employee-list augment), all via the Orthogonal
+API. Retro Cartoon-Network aesthetic. "Powered by orthogonal.com" demo — not
+Orthogonal-owned branding.
 
 - **Repo:** github.com/Angularious/rolodex (branch `main`; `gh` authed as Angularious)
 - **Live:** rolodex-lime.vercel.app (Vercel, auto-deploys on push to `main`; feature
   branches get preview deploys). Workflow is **PR-based** — branch, PR, merge.
 - **Owner:** Jerry Du (jerry@orthogonal.sh)
 - **Status:** Tomba→Company Enrich+ContactOut migration is **merged & live** (PRs #1–3).
-  Prod cap is **$40/day**; pg_cron pruning is enabled.
+  **Per-visitor caps + honest cost accounting + Tomba employee augment merged & live
+  2026-06-22 (PR #15)**; the Supabase migration (rate_events.site, spend_events.ip_hash,
+  5-arg `reserve_spend`) was applied to prod first. pg_cron pruning is enabled.
+- **Cap value:** global cap is whatever `DAILY_SPEND_CAP_USD` is set to in Vercel
+  (intent is **$20**; the env var predates this work — confirm it reads 20, not the old
+  40). Layered beneath it: per-IP `PER_IP_DAILY_USD` ($5) + per-session
+  `SESSION_DAILY_USD` ($3).
+- **Env knobs (Vercel; all have safe code defaults so none are strictly required):**
+  spend `DAILY_SPEND_CAP_USD` / `PER_IP_DAILY_USD` (5) / `SESSION_DAILY_USD` (3) — read
+  per-request, live immediately. Rate `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY`
+  (30/300/1000), `EMPLOYEE_PAGE_SIZE` (8), `EMPLOYEE_LIST_MAX` (15) — read at cold
+  start, need a redeploy to change. `SESSION_SECRET` (falls back to `IP_HASH_SALT`).
+  `SITE_ID` (defaults `'rolodex'`).
 
 ## Stack
 Next.js 14 App Router · React 18 · Tailwind 3 + custom retro CSS · Supabase
