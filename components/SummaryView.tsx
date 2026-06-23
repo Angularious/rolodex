@@ -217,11 +217,11 @@ export default function SummaryView({
               {company.fundingRounds!.map((r, i) => (
                 <div
                   key={i}
-                  style={{ borderBottom: i < company.fundingRounds!.length - 1 ? '1px solid #0e1626' : 'none', padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 11 }}
+                  style={{ borderBottom: i < company.fundingRounds!.length - 1 ? '1px solid #0e1626' : 'none', padding: '8px 0', display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'baseline', gap: 8, fontSize: 11 }}
                 >
                   <span style={{ color: '#cfdcea', fontWeight: 600 }}>{r.type || 'Round'}</span>
-                  <span style={{ color: CIRCUIT_COLOR.funding }}>{r.amount || '—'}</span>
-                  <span style={{ color: '#5b6b82', fontSize: 10 }}>{r.date?.slice(0, 7) || ''}</span>
+                  <span style={{ color: CIRCUIT_COLOR.funding, textAlign: 'center' }}>{r.amount || '—'}</span>
+                  <span style={{ color: '#5b6b82', fontSize: 10, textAlign: 'right' }}>{r.date?.slice(0, 7) || ''}</span>
                 </div>
               ))}
             </div>

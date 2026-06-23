@@ -199,7 +199,14 @@ Reveals are billed on demand on top:
 - Data quality varies by domain. Good demo targets (verified): stripe.com,
   google.com, spacex.com, figma.com.
 
-## Supabase (the persistent store)
+## Supabase (the persistent store — SHARED across all Orthogonal demo sites)
+**This project shares one Supabase instance with all other Orthogonal demo sites.**
+Free-tier quotas (500 MB DB, row limits, cron slots) are pooled. Every table has a
+`site` column; rolodex scopes itself to `SITE_ID` (`lib/site.ts`, default `'rolodex'`,
+env-overridable) so its caps, analytics, and rate limits are isolated. **Never touch
+rows or objects that belong to another site.** When adding a new table or cron job,
+prefix it or tag it with `SITE_ID` so siblings are unaffected.
+
 - Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (service-role, server-only).
 - Run `supabase/schema.sql` once in the SQL editor. Tables: `rate_events`,
   `spend_events` (now incl. an `ip_hash` column for the per-IP sub-cap),
