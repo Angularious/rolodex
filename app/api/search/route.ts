@@ -22,7 +22,8 @@ import {
   mapPeople,
 } from '@/lib/companyenrich';
 import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
-import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
+import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeAllEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
+import { searchPeople as coSearch, mapContactOutPeople } from '@/lib/contactout';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
@@ -41,12 +42,11 @@ const PAGE_SIZE = (() => {
   return Number.isFinite(n) && n > 0 && n <= 25 ? n : 8;
 })();
 
-// Max combined employees to show (CE rows + deduped Tomba fillers). Tomba's
-// $0.01 domain-search returns up to 50 for the same price, so this is purely a
-// display cap, env-tunable.
+// Max combined employees to show (CE + ContactOut + Tomba). All three sources
+// fire for every search; this is a display cap only, env-tunable.
 const EMPLOYEE_DISPLAY_MAX = (() => {
   const n = parseInt(process.env.EMPLOYEE_LIST_MAX ?? '', 10);
-  return Number.isFinite(n) && n > 0 && n <= 50 ? n : 30;
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : 50;
 })();
 
 // Per-call prices (USD) for the spend ledger. Keep in sync with the marketplace.
@@ -56,8 +56,9 @@ const PRICE = {
   perPerson: 0.0245, // company-enrich /people/search (per result)
   competitors: 0.01, // tomba /v1/similar
   aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
-  tombaEmployees: 0.01, // tomba /v1/domain-search (employee-list augment, flat)
+  tombaEmployees: 0.01, // tomba /v1/domain-search (always fires, flat)
   emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
+  contactoutSearch: 0.05, // contactout /v1/people/search (discovery, flat 25 profiles)
 };
 
 // Worst-case cost of one search, reserved against the hard cap up front and
@@ -68,8 +69,9 @@ const ESTIMATE_USD =
   PRICE.perPerson * PAGE_SIZE +
   PRICE.competitors +
   PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
-  PRICE.tombaEmployees + // employee-list augment (flat, fires on a thin CE list)
-  PRICE.emailFormat; // domain email pattern (flat, always fires)
+  PRICE.tombaEmployees + // employee-list augment (flat, always fires)
+  PRICE.emailFormat + // domain email pattern (flat, always fires)
+  PRICE.contactoutSearch; // employee discovery (flat, always fires)
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -259,42 +261,50 @@ export async function POST(req: NextRequest) {
             write({ type: 'workforce', data: null, error: 'unavailable' });
           }),
         (async () => {
-          try {
-            const raw = await peopleSearch(domain, PAGE_SIZE);
-            const mapped = mapPeople(raw);
-            // CE bills on the REQUESTED page size, not the returned count, so
-            // charge PAGE_SIZE (the returned count is often lower — e.g. figma
-            // returns 6 for a request of 8). Charging the returned count let the
-            // hard cap pass ~25-35% more real spend than it recorded.
+          // Fire all three employee sources in parallel.
+          let company = preResolvedCompany?.name || domain.split('.')[0];
+          if (company.length < 3) company = domain; // Tomba requires 3-75 chars
+
+          const [ceRaw, coRaw, tombaRaw] = await Promise.allSettled([
+            peopleSearch(domain, PAGE_SIZE),
+            coSearch(domain),
+            domainSearch(domain, company, 50),
+          ]);
+
+          // CE: billed on REQUESTED page size (not returned count).
+          let ceEmployees: ReturnType<typeof mapPeople>['employees'] = [];
+          let totalAvailable = 0;
+          if (ceRaw.status === 'fulfilled') {
             spentUsd += PRICE.perPerson * PAGE_SIZE;
-
-            let employees = mapped.employees;
-            let totalAvailable = mapped.totalAvailable;
-
-            // Augment a thin CE list with Tomba's $0.01 domain-search directory
-            // (up to 50, emails inline-but-unverified). Deduped against CE and
-            // capped; a Tomba failure keeps the CE-only list.
-            if (employees.length < EMPLOYEE_DISPLAY_MAX) {
-              try {
-                let company = preResolvedCompany?.name || domain.split('.')[0];
-                if (company.length < 3) company = domain; // Tomba needs 3-75 chars
-                const tombaRaw = await domainSearch(domain, company, 50);
-                spentUsd += PRICE.tombaEmployees; // billed on the call, not the count
-                const filler = mapTombaEmployees(tombaRaw);
-                if (filler.length) {
-                  employees = mergeEmployees(employees, filler, EMPLOYEE_DISPLAY_MAX);
-                  totalAvailable = Math.max(totalAvailable, employees.length);
-                }
-              } catch (err) {
-                noteQuota(err); // keep the CE-only list on Tomba failure
-              }
-            }
-
-            write({ type: 'employees', data: employees, totalAvailable });
-          } catch (err) {
-            noteQuota(err);
-            write({ type: 'employees', data: [], totalAvailable: 0, error: 'unavailable' });
+            const mapped = mapPeople(ceRaw.value);
+            ceEmployees = mapped.employees;
+            totalAvailable = mapped.totalAvailable;
+          } else {
+            noteQuota(ceRaw.reason);
           }
+
+          // ContactOut: flat $0.05 for 25 profiles.
+          let coEmployees: import('@/lib/types').Employee[] = [];
+          if (coRaw.status === 'fulfilled') {
+            spentUsd += PRICE.contactoutSearch;
+            coEmployees = mapContactOutPeople(coRaw.value);
+          } else {
+            noteQuota(coRaw.reason);
+          }
+
+          // Tomba: flat $0.01 for up to 50 domain emails. Pass domain so the mapper
+          // can drop emails from same-named companies at a different TLD.
+          let tombaEmployees: import('@/lib/types').Employee[] = [];
+          if (tombaRaw.status === 'fulfilled') {
+            spentUsd += PRICE.tombaEmployees;
+            tombaEmployees = mapTombaEmployees(tombaRaw.value, domain);
+          } else {
+            noteQuota(tombaRaw.reason);
+          }
+
+          const merged = mergeAllEmployees(ceEmployees, coEmployees, tombaEmployees, EMPLOYEE_DISPLAY_MAX);
+          totalAvailable = Math.max(totalAvailable, merged.length);
+          write({ type: 'employees', data: merged, totalAvailable });
         })(),
         similar(domain)
           .then((raw) => {

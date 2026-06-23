@@ -40,6 +40,24 @@ const SOURCE_LABEL: Record<EmailHit['source'], string> = {
   'contactout': 'likely',
 };
 
+// Confidence badge per employee row (source → capability label, no provider names).
+const CONFIDENCE: Record<NonNullable<Employee['source']>, { label: string; cls: string }> = {
+  'company-enrich': { label: 'verified', cls: 'text-emerald-400 border-emerald-400/40 bg-emerald-400/10' },
+  'contactout':     { label: 'enriched', cls: 'text-sky-400 border-sky-400/40 bg-sky-400/10' },
+  'tomba':          { label: 'pattern',  cls: 'text-amber-400 border-amber-400/40 bg-amber-400/10' },
+};
+
+function ConfidenceBadge({ source }: { source?: Employee['source'] }) {
+  if (!source) return null;
+  const c = CONFIDENCE[source];
+  if (!c) return null;
+  return (
+    <span className={`inline-block text-[0.55rem] uppercase tracking-wide border rounded px-1 py-px font-bold ${c.cls}`}>
+      {c.label}
+    </span>
+  );
+}
+
 export type RevealFn = (payload: {
   ceId?: string | null;
   linkedin?: string | null;
@@ -266,6 +284,18 @@ export default function EmployeesTab({
       );
     }
 
+    // ContactOut rows that have a verified work email on file → hint before Reveal.
+    if (e.hasContactOutEmail) {
+      return (
+        <div className="flex flex-col gap-0.5 items-start">
+          <span className="text-[0.6rem] uppercase tracking-wide text-sky-400">work email on file</span>
+          <button onClick={() => reveal(e)} className="retro-btn retro-btn-sm retro-btn-blue">
+            Reveal →
+          </button>
+        </div>
+      );
+    }
+
     return (
       <button
         onClick={() => reveal(e)}
@@ -382,7 +412,10 @@ export default function EmployeesTab({
                   <td className="font-bold">
                     <div className="flex items-center gap-2">
                       <Avatar src={e.photo} name={e.fullName} size={26} />
-                      {e.fullName}
+                      <div className="flex flex-col gap-0.5">
+                        {e.fullName}
+                        <ConfidenceBadge source={e.source} />
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -421,7 +454,10 @@ export default function EmployeesTab({
               <div className="flex items-center gap-2.5 min-w-0">
                 <Avatar src={e.photo} name={e.fullName} size={34} />
                 <div className="min-w-0">
-                  <div className="font-bold truncate">{e.fullName}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold truncate">{e.fullName}</span>
+                    <ConfidenceBadge source={e.source} />
+                  </div>
                   <div className="text-sm text-slate truncate">{e.title || '—'}</div>
                 </div>
               </div>
