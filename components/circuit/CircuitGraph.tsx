@@ -283,11 +283,11 @@ export default function CircuitGraph({
   }, [resetUserTransform]);
 
   const reveal = useCallback(
-    async (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => {
+    async (id: string, payload: { ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null }) => {
       setRevealMap((m) => (m[id]?.loading || m[id]?.tried ? m : { ...m, [id]: { loading: true, tried: false, email: null, phone: null } }));
       try {
         const res = await onReveal(payload);
-        setRevealMap((m) => ({ ...m, [id]: { loading: false, tried: true, email: res.email, phone: res.phone ?? null } }));
+        setRevealMap((m) => ({ ...m, [id]: { loading: false, tried: true, email: res.emails[0]?.email ?? null, phone: res.phone } }));
       } catch {
         setRevealMap((m) => ({ ...m, [id]: { loading: false, tried: true, email: null, phone: null } }));
       }
@@ -569,7 +569,7 @@ function kindLabel(k: SubNode['kind']): string {
   return { employee: 'EMPLOYEE', department: 'DEPARTMENT', competitor: 'COMPETITOR', tech: 'TECHNOLOGY', funding: 'FUNDING ROUND' }[k];
 }
 
-function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact, inlineEmail }: { id: string; color: string; ceId?: string | null; linkedin?: string | null; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState; noContact?: boolean; inlineEmail?: string | null }) {
+function RevealBlock({ id, color, ceId, linkedin, firstName, lastName, reveal, st, noContact, inlineEmail }: { id: string; color: string; ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null }) => void; st?: RevealState; noContact?: boolean; inlineEmail?: string | null }) {
   const got = st?.email || st?.phone;
   return (
     <div className="mt-4">
@@ -588,7 +588,7 @@ function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact, inlineE
             <div className="text-[0.68rem] text-[#5b6b82]">NO VERIFIED CONTACT FOUND.</div>
           ) : (
             <button
-              onClick={() => reveal(id, { ceId, linkedin })}
+              onClick={() => reveal(id, { ceId, linkedin, firstName, lastName })}
               disabled={st?.loading}
               className="mt-2 w-full text-[0.72rem] tracking-[0.12em] border px-3 py-2 hover:bg-white/5 disabled:opacity-50"
               style={{ borderColor: color, color }}
@@ -603,7 +603,7 @@ function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact, inlineE
         <div className="text-[0.72rem] text-[#5b6b82] border px-3 py-2" style={{ borderColor: '#1c2940' }}>NO CONTACT ON FILE.</div>
       ) : (
         <button
-          onClick={() => reveal(id, { ceId, linkedin })}
+          onClick={() => reveal(id, { ceId, linkedin, firstName, lastName })}
           disabled={st?.loading}
           className="w-full text-[0.74rem] tracking-[0.12em] border px-3 py-2 hover:bg-white/5 disabled:opacity-50"
           style={{ borderColor: color, color }}
@@ -626,7 +626,7 @@ function InitialsAvatar({ name, color }: { name: string; color: string }) {
   );
 }
 
-function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
+function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null }) => void; st?: RevealState }) {
   return (
     <div>
       <InitialsAvatar name={emp.fullName} color={color} />
@@ -640,7 +640,7 @@ function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: strin
           LINKEDIN ↗
         </a>
       )}
-      <RevealBlock id={id} color={color} ceId={emp.ceId} linkedin={emp.linkedin} reveal={reveal} st={st} inlineEmail={emp.emailUnverified ? emp.email : null} />
+      <RevealBlock id={id} color={color} ceId={emp.ceId} linkedin={emp.linkedin} firstName={emp.firstName} lastName={emp.lastName} reveal={reveal} st={st} inlineEmail={emp.emailUnverified ? emp.email : null} />
     </div>
   );
 }

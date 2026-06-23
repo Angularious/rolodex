@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Employee, RevealResult } from '@/lib/types';
+import type { Employee, EmailHit, FormatPattern, RevealResult } from '@/lib/types';
+import { applyEmailFormat } from '@/lib/email';
 import { countryName } from '@/lib/format';
 import { useToast } from './Toast';
 import { SectionError } from './DepartmentsTab';
 import { Avatar } from './DecisionMakersTab';
 
-// "2025-02-01" → "Since 2025" for a compact tenure hint.
 function tenureLabel(startedAt?: string | null): string | null {
   if (!startedAt) return null;
   const year = startedAt.slice(0, 4);
@@ -16,7 +16,6 @@ function tenureLabel(startedAt?: string | null): string | null {
 
 type SortKey = 'name' | 'seniority' | 'department';
 
-// Best-effort ordering for Company Enrich seniority labels.
 const SENIORITY_RANK: Record<string, number> = {
   founder: 0,
   owner: 0,
@@ -34,20 +33,42 @@ const SENIORITY_RANK: Record<string, number> = {
   junior: 10,
 };
 
+// Provider-agnostic display labels (CLAUDE.md: no provider names in UI).
+const SOURCE_LABEL: Record<EmailHit['source'], string> = {
+  'company-enrich': 'verified',
+  'apollo': 'likely',
+  'contactout': 'likely',
+};
+
 export type RevealFn = (payload: {
   ceId?: string | null;
   linkedin?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
 }) => Promise<RevealResult>;
 
 interface RevealState {
   loading: boolean;
   tried: boolean;
-  email: string | null;
+  emails: EmailHit[];
   phone: string | null;
 }
 
 function rowKey(e: Employee): string {
   return e.ceId || e.linkedin || e.fullName;
+}
+
+/** Human-readable format pattern, e.g. "{first}.{last}@bcg.com" → "first.last@bcg.com" */
+function formatExample(format: string, domain: string): string {
+  return (
+    format
+      .replace('{first}', 'first')
+      .replace('{last}', 'last')
+      .replace('{f}', 'f')
+      .replace('{l}', 'l') +
+    '@' +
+    domain
+  );
 }
 
 export function EmployeesSkeleton() {
@@ -70,6 +91,8 @@ export default function EmployeesTab({
   onConnectClick,
   error,
   onRetry,
+  emailFormat = [],
+  domain = '',
 }: {
   employees: Employee[];
   totalAvailable: number;
@@ -79,6 +102,8 @@ export default function EmployeesTab({
   onConnectClick: () => void;
   error?: boolean;
   onRetry?: () => void;
+  emailFormat?: FormatPattern[];
+  domain?: string;
 }) {
   const toast = useToast();
   const [dept, setDept] = useState('');
@@ -132,33 +157,123 @@ export default function EmployeesTab({
   const reveal = async (e: Employee) => {
     const key = rowKey(e);
     if (revealed[key]?.loading || revealed[key]?.tried) return;
-    setRevealed((r) => ({ ...r, [key]: { loading: true, tried: false, email: null, phone: null } }));
+    setRevealed((r) => ({ ...r, [key]: { loading: true, tried: false, emails: [], phone: null } }));
     try {
-      const res = await onReveal({ ceId: e.ceId, linkedin: e.linkedin });
+      const res = await onReveal({ ceId: e.ceId, linkedin: e.linkedin, firstName: e.firstName, lastName: e.lastName });
       setRevealed((r) => ({
         ...r,
-        [key]: { loading: false, tried: true, email: res.email, phone: res.phone ?? null },
+        [key]: { loading: false, tried: true, emails: res.emails, phone: res.phone },
       }));
-      if (res.email) toast(`Revealed ${res.email}`);
-      else toast('No email found');
+      if (res.emails.length || res.phone) toast(`Revealed contact`);
+      else toast('No contact found');
     } catch {
-      setRevealed((r) => ({ ...r, [key]: { loading: false, tried: true, email: null, phone: null } }));
+      setRevealed((r) => ({ ...r, [key]: { loading: false, tried: true, emails: [], phone: null } }));
       toast('Reveal failed');
     }
   };
 
-  const copyEmail = (email: string | null) => {
-    if (!email) return;
-    navigator.clipboard.writeText(email).then(() => toast(`Copied ${email}`));
+  const copyText = (text: string | null) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => toast(`Copied ${text}`));
   };
 
   const copyAllEmails = () => {
     const emails = filtered
-      .map((e) => revealed[rowKey(e)]?.email)
+      .map((e) => {
+        const st = revealed[rowKey(e)];
+        return st?.emails[0]?.email ?? (e.email ?? null);
+      })
       .filter(Boolean)
       .join(', ');
     if (!emails) return toast('Reveal some emails first');
-    navigator.clipboard.writeText(emails).then(() => toast('Copied revealed emails'));
+    navigator.clipboard.writeText(emails as string).then(() => toast('Copied emails'));
+  };
+
+  // The dominant email format pattern (highest percentage).
+  const dominantPattern = emailFormat[0] ?? null;
+
+  const EmailCell = ({ e }: { e: Employee }) => {
+    const st = revealed[rowKey(e)];
+
+    // Post-reveal: show all found emails + phone.
+    if (st?.tried) {
+      if (!st.emails.length && !st.phone)
+        return <span className="text-slate text-xs">not found</span>;
+      return (
+        <div className="flex flex-col gap-1 items-start">
+          {st.emails.map((h) => (
+            <div key={h.email} className="flex flex-col gap-0">
+              <button
+                onClick={() => copyText(h.email)}
+                className="text-accent-soft underline break-all text-left leading-tight"
+              >
+                {h.email}
+              </button>
+              <span className="text-[0.6rem] uppercase tracking-wide text-slate">
+                {SOURCE_LABEL[h.source]}
+              </span>
+            </div>
+          ))}
+          {st.phone && (
+            <button
+              onClick={() => copyText(st.phone)}
+              className="text-slate text-xs underline"
+            >
+              {st.phone}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if (st?.loading) return <span className="text-slate text-xs">…</span>;
+
+    // Compute pattern email for CE employees that have no inline email.
+    const patternEmail =
+      !e.email && dominantPattern
+        ? applyEmailFormat(dominantPattern.format, e.firstName, e.lastName, domain)
+        : null;
+
+    // Pre-reveal: show inline email (Tomba or pattern) + Enrich button.
+    const inlineEmail = e.email ?? patternEmail;
+    if (inlineEmail) {
+      const isPattern = !e.email && !!patternEmail;
+      return (
+        <div className="flex flex-col gap-0.5 items-start">
+          <button
+            onClick={() => copyText(inlineEmail)}
+            className="text-accent-soft underline break-all text-left leading-tight"
+          >
+            {inlineEmail}
+          </button>
+          <span
+            className="text-[0.6rem] uppercase tracking-wide text-slate"
+            title={
+              isPattern
+                ? `Pattern-derived from the ${dominantPattern?.percentage}% dominant format — not verified`
+                : 'Pattern-derived address — not verified for deliverability'
+            }
+          >
+            {isPattern ? 'pattern · likely' : 'unverified · likely'}
+          </span>
+          <button
+            onClick={() => reveal(e)}
+            className="retro-btn retro-btn-sm retro-btn-blue mt-0.5"
+          >
+            Enrich →
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <button
+        onClick={() => reveal(e)}
+        className="retro-btn retro-btn-sm retro-btn-blue"
+      >
+        Reveal
+      </button>
+    );
   };
 
   if (loading && employees.length === 0) return <EmployeesSkeleton />;
@@ -167,44 +282,29 @@ export default function EmployeesTab({
     return <div className="retro-panel-flat p-6 text-center text-slate">No employee records found.</div>;
   }
 
-  const EmailCell = ({ e }: { e: Employee }) => {
-    const st = revealed[rowKey(e)];
-    if (st?.email)
-      return (
-        <button onClick={() => copyEmail(st.email)} className="text-accent-soft underline break-all">
-          {st.email}
-        </button>
-      );
-    if (st?.tried) return <span className="text-slate text-xs">not found</span>;
-    // Tomba filler row: a pattern-derived address shown for free. Label it clearly
-    // and still offer Reveal to confirm deliverability / add a phone.
-    if (e.email && e.emailUnverified)
-      return (
-        <div className="flex flex-col gap-0.5 items-start">
-          <button onClick={() => copyEmail(e.email!)} className="text-accent-soft underline break-all">
-            {e.email}
-          </button>
-          <span
-            className="text-[0.6rem] uppercase tracking-wide text-slate"
-            title="Pattern-derived address — not verified for deliverability"
-          >
-            unverified · likely
-          </span>
-        </div>
-      );
-    return (
-      <button
-        onClick={() => reveal(e)}
-        disabled={st?.loading}
-        className="retro-btn retro-btn-sm retro-btn-blue"
-      >
-        {st?.loading ? '…' : 'Reveal'}
-      </button>
-    );
-  };
-
   return (
     <div className="pop-in">
+      {/* Email format info box */}
+      {emailFormat.length > 0 && domain && (
+        <div className="retro-panel-flat px-3 py-2 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="text-[0.6rem] uppercase tracking-[0.14em] text-slate font-bold shrink-0">
+            Email format
+          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+            {emailFormat.map((p) => (
+              <span key={p.format} className="flex items-center gap-1.5">
+                <code className="font-mono text-[0.72rem] text-accent-soft">
+                  {formatExample(p.format, domain)}
+                </code>
+                {emailFormat.length > 1 && (
+                  <span className="text-[0.6rem] text-slate">{p.percentage}%</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filter bar */}
       <div className="retro-panel-flat p-3 mb-3 flex flex-wrap items-end gap-3">
         <Field label="Department">
@@ -256,7 +356,7 @@ export default function EmployeesTab({
         </span>
         <div className="flex gap-2">
           <button className="retro-btn retro-btn-sm" onClick={copyAllEmails}>
-            ⎘ Copy revealed
+            ⎘ Copy emails
           </button>
         </div>
       </div>

@@ -29,7 +29,7 @@ export interface SummaryData {
 interface RevealState {
   loading: boolean;
   tried: boolean;
-  email: string | null;
+  email: string | null; // best email found (first from the multi-source result)
   phone: string | null;
 }
 
@@ -100,13 +100,14 @@ export default function SummaryView({
 
   const activeColor = tabDefs.find(t => t.id === tab)?.color ?? CIRCUIT_COLOR.employees;
 
-  const reveal = useCallback(async (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => {
+  const reveal = useCallback(async (id: string, payload: { ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null }) => {
     if (revealMap[id]?.loading || revealMap[id]?.tried) return;
     setRevealMap(m => ({ ...m, [id]: { loading: true, tried: false, email: null, phone: null } }));
     try {
       const res = await onReveal(payload);
-      setRevealMap(m => ({ ...m, [id]: { loading: false, tried: true, email: res.email, phone: res.phone ?? null } }));
-      if (res.email || res.phone) toast(`Revealed contact`);
+      const email = res.emails[0]?.email ?? null;
+      setRevealMap(m => ({ ...m, [id]: { loading: false, tried: true, email, phone: res.phone } }));
+      if (email || res.phone) toast(`Revealed contact`);
       else toast('No contact found');
     } catch {
       setRevealMap(m => ({ ...m, [id]: { loading: false, tried: true, email: null, phone: null } }));
@@ -347,7 +348,7 @@ function EmployeesPane({
   total: number | null;
   loading: boolean;
   revealMap: Record<string, RevealState>;
-  onReveal: (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => void;
+  onReveal: (id: string, payload: { ceId?: string | null; linkedin?: string | null; firstName?: string | null; lastName?: string | null }) => void;
 }) {
   if (loading && employees.length === 0) return <PaneLoadingSkeleton rows={6} />;
   if (employees.length === 0) return <EmptyPane label="No employees found" />;
@@ -371,7 +372,7 @@ function EmployeesPane({
             linkedin={e.linkedin}
             color={CIRCUIT_COLOR.employees}
             st={revealMap[id]}
-            onReveal={() => onReveal(id, { ceId: e.ceId, linkedin: e.linkedin })}
+            onReveal={() => onReveal(id, { ceId: e.ceId, linkedin: e.linkedin, firstName: e.firstName, lastName: e.lastName })}
           />
         );
       })}

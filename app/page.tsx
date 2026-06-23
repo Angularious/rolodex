@@ -8,6 +8,7 @@ import type {
   Competitor,
   Workforce,
   Employee,
+  FormatPattern,
   RevealResult,
   SearchError,
 } from '@/lib/types';
@@ -53,6 +54,7 @@ interface Report {
   employeesError: boolean;
   cost: number;
   durationMs: number;
+  emailFormat: FormatPattern[];
 }
 
 function freshReport(inputEcho: string): Report {
@@ -74,6 +76,7 @@ function freshReport(inputEcho: string): Report {
     employeesError: false,
     cost: 0,
     durationMs: 0,
+    emailFormat: [],
   };
 }
 
@@ -177,6 +180,7 @@ export default function Home() {
       employeesError: false,
       cost: 0,
       durationMs: 0,
+      emailFormat: [{ format: '{first}.{last}', percentage: 98 }],
     });
     setStatus('ready');
     setDone(true);
@@ -237,6 +241,8 @@ export default function Home() {
                   employeesLoading: false,
                   employeesError: msg.data.length === 0 && !!msg.error,
                 };
+              case 'emailformat':
+                return { ...r, emailFormat: msg.patterns };
               case 'done':
                 return {
                   ...r,
@@ -294,12 +300,20 @@ export default function Home() {
     window.open('https://orthogonal.com', '_blank', 'noopener');
   };
 
-  // On-demand email/phone reveal for one person (tiered server-side).
+  // On-demand email/phone reveal for one person (multi-source server-side).
   const revealContact = useCallback(
-    async (payload: { ceId?: string | null; linkedin?: string | null }): Promise<RevealResult> => {
+    async (payload: {
+      ceId?: string | null;
+      linkedin?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+    }): Promise<RevealResult> => {
       // Demo mode: never hit the paid reveal route.
       if (demoRef.current) {
-        return { email: 'demo.contact@hyperion.demo', phone: '+1 555-0142', source: 'company-enrich' };
+        return {
+          emails: [{ email: 'demo.contact@hyperion.demo', source: 'company-enrich' }],
+          phone: '+1 555-0142',
+        };
       }
       const res = await fetch('/api/reveal', {
         method: 'POST',
@@ -308,12 +322,15 @@ export default function Home() {
           domain: report?.domain,
           ceId: payload.ceId ?? undefined,
           linkedin: payload.linkedin ?? undefined,
+          firstName: payload.firstName ?? undefined,
+          lastName: payload.lastName ?? undefined,
+          organizationName: report?.company?.name ?? undefined,
         }),
       });
       if (!res.ok) throw new Error('reveal_failed');
       return (await res.json()) as RevealResult;
     },
-    [report?.domain],
+    [report?.domain, report?.company?.name],
   );
 
   const reset = () => {
@@ -531,6 +548,8 @@ export default function Home() {
                     onConnectClick={connectOrthogonal}
                     error={report.employeesError}
                     onRetry={() => requestSearch(report.domain)}
+                    emailFormat={report.emailFormat}
+                    domain={report.domain}
                   />
                 )}
                 {activeTab === 'departments' && (

@@ -12,20 +12,23 @@ import {
 } from '@/lib/session';
 import { resolveWorkEmail } from '@/lib/companyenrich';
 import { revealByLinkedin } from '@/lib/contactout';
+import { matchPerson } from '@/lib/apollo';
+import { isRoleEmail } from '@/lib/tomba';
 import { isQuotaError } from '@/lib/orthogonal';
-import type { RevealResult, SearchError } from '@/lib/types';
+import type { RevealResult, EmailHit, SearchError } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 const PRICE = {
-  ceEmail: 0.12, // company-enrich /people/email
+  ceEmail: 0.12,    // company-enrich /people/email
+  apollo: 0.01,     // apollo /api/v1/people/match
   contactout: 0.55, // contactout /v1/linkedin/enrich
 };
 
-// Worst-case: both tiers run. Reserved up front, reconciled to the real cost.
-const ESTIMATE_USD = PRICE.ceEmail + PRICE.contactout;
+// Worst-case: all three tiers run (CE + Apollo + ContactOut).
+const ESTIMATE_USD = PRICE.ceEmail + PRICE.apollo + PRICE.contactout;
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -35,11 +38,13 @@ function errorResponse(err: SearchError, status: number): Response {
 }
 
 /**
- * On-demand email/phone reveal for a single person. Tiered:
- *   1. Company Enrich /people/email by CompanyEnrich id ($0.12, work email only)
- *   2. fall back to ContactOut /v1/linkedin/enrich ($0.55, email + phone)
- * Gated identically to /api/search (origin lock, rate limit, spend cap) and
- * billed against the same daily ledger. Nothing is persisted (data policy).
+ * On-demand email/phone reveal for a single person. Returns all emails found
+ * across three parallel/sequential tiers:
+ *   1. Company Enrich /people/email by ceId ($0.12, verified work email)
+ *   2. Apollo /api/v1/people/match by LinkedIn or name+domain ($0.01, unverified)
+ *   3. ContactOut /v1/linkedin/enrich by LinkedIn ($0.55, email + phone)
+ * CE + Apollo run in parallel (both cheap). ContactOut runs for phone coverage.
+ * Role/generic inboxes are filtered before returning.
  */
 export async function POST(req: NextRequest) {
   if (!originAllowed(req)) {
@@ -53,6 +58,9 @@ export async function POST(req: NextRequest) {
     domain?: string;
     ceId?: string;
     linkedin?: string;
+    firstName?: string;
+    lastName?: string;
+    organizationName?: string;
   } | null;
   if (!body || (!body.ceId && !body.linkedin)) {
     return errorResponse({ error: 'bad_request' }, 400);
@@ -64,14 +72,10 @@ export async function POST(req: NextRequest) {
   if (!rl.ok) {
     return errorResponse({ error: 'rate_limited', retryAfterSec: rl.retryAfterSec }, 429);
   }
-  // Per-session (cookie) budget — reveals share the same per-visitor budget as
-  // searches, so the priciest per-click action can't be the abuse vector.
   const session = readSession(req);
   if (sessionExceeded(session, ESTIMATE_USD)) {
     return errorResponse({ error: 'rate_limited', retryAfterSec: secondsUntilUtcMidnight() }, 429);
   }
-  // Atomic hard-cap reservation (worst case = both tiers), scoped to this IP;
-  // reconciled below. 'perip' → this visitor's daily $ budget is spent (429).
   const reservation = await reserveSpend(ESTIMATE_USD, idHash);
   if (!reservation.allowed) {
     if (reservation.reason === 'perip') {
@@ -81,39 +85,61 @@ export async function POST(req: NextRequest) {
   }
 
   let spentUsd = 0;
-  const result: RevealResult = { email: null, phone: null, source: null };
+  const emails: EmailHit[] = [];
+  let phone: string | null = null;
 
   try {
-    // Tier 1 — cheap work-email resolution (needs a CompanyEnrich person id).
-    if (body.ceId) {
-      spentUsd += PRICE.ceEmail;
-      const email = await resolveWorkEmail(body.ceId, body.domain);
-      if (email) {
-        result.email = email;
-        result.source = 'company-enrich';
+    // Tier 1 + 2 in parallel: CE (cheap verified) + Apollo (cheap unverified).
+    const [ceEmail, apolloEmail] = await Promise.all([
+      body.ceId
+        ? resolveWorkEmail(body.ceId, body.domain).then((e) => {
+            spentUsd += PRICE.ceEmail;
+            return e;
+          })
+        : Promise.resolve(null),
+      matchPerson({
+        linkedin: body.linkedin,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        organizationName: body.organizationName ?? body.domain,
+        domain: body.domain,
+      }).then((e) => {
+        spentUsd += PRICE.apollo;
+        return e;
+      }).catch(() => null), // Apollo failure is non-fatal
+    ]);
+
+    if (ceEmail && !isRoleEmail(ceEmail)) {
+      emails.push({ email: ceEmail, source: 'company-enrich' });
+    }
+    if (apolloEmail && !isRoleEmail(apolloEmail)) {
+      // Dedupe: skip if CE already found the same address.
+      const ceNorm = ceEmail?.toLowerCase();
+      if (apolloEmail.toLowerCase() !== ceNorm) {
+        emails.push({ email: apolloEmail, source: 'apollo' });
       }
     }
 
-    // Tier 2 — ContactOut by LinkedIn (broader coverage + phone).
-    if (!result.email && body.linkedin) {
+    // Tier 3: ContactOut for phone + additional email (by LinkedIn).
+    if (body.linkedin) {
       spentUsd += PRICE.contactout;
-      const { email, phone } = await revealByLinkedin(body.linkedin);
-      if (email || phone) {
-        result.email = email;
-        result.phone = phone;
-        result.source = 'contactout';
+      const co = await revealByLinkedin(body.linkedin);
+      if (co.phone) phone = co.phone;
+      if (co.email && !isRoleEmail(co.email)) {
+        const norm = co.email.toLowerCase();
+        const already = emails.some((h) => h.email.toLowerCase() === norm);
+        if (!already) emails.push({ email: co.email, source: 'contactout' });
       }
     }
   } catch (err) {
-    // Reconcile whatever we actually spent before failing, then report cleanly.
     await reconcileSpend(spentUsd - ESTIMATE_USD, idHash);
-    // Key hit its limit → capacity, so the client can message it consistently.
     if (isQuotaError(err)) return errorResponse({ error: 'capacity' }, 503);
     return errorResponse({ error: 'server_error', message: 'Reveal failed.' }, 502);
   }
 
   await reconcileSpend(spentUsd - ESTIMATE_USD, idHash);
 
+  const result: RevealResult = { emails, phone };
   return new Response(JSON.stringify(result), {
     headers: {
       'content-type': 'application/json',

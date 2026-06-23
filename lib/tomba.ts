@@ -13,7 +13,7 @@
 
 import { callOrthogonal } from './orthogonal';
 import { deptLabel } from './companyenrich';
-import type { Competitor, Employee } from './types';
+import type { Competitor, Employee, FormatPattern } from './types';
 
 const API = 'tomba';
 
@@ -28,6 +28,23 @@ interface RawSimilar {
 
 export const similar = (domain: string) =>
   callOrthogonal<RawSimilar>(API, '/v1/similar', { domain });
+
+// --------------------------------------------------------------- email-format
+interface RawEmailFormat {
+  data?: Array<{ format?: string | null; percentage?: number | null }> | null;
+}
+
+/** Returns the dominant email patterns for a domain (flat $0.01). */
+export const emailFormat = (domain: string) =>
+  callOrthogonal<RawEmailFormat>(API, '/v1/email-format', { domain });
+
+export function mapEmailFormat(raw: RawEmailFormat): FormatPattern[] {
+  return (raw?.data ?? [])
+    .filter((p): p is { format: string; percentage: number } =>
+      typeof p?.format === 'string' && typeof p?.percentage === 'number',
+    )
+    .sort((a, b) => b.percentage - a.percentage);
+}
 
 export function mapCompetitors(raw: RawSimilar): Competitor[] {
   return (raw?.data ?? [])
@@ -91,7 +108,7 @@ const ROLE_MAILBOX = new Set([
   'subscribe', 'unsubscribe', 'bounce', 'general', 'main', 'official', 'team-us',
 ]);
 
-function isRoleEmail(email: string | null | undefined): boolean {
+export function isRoleEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   const local = email.split('@')[0].toLowerCase().split('+')[0];
   if (ROLE_MAILBOX.has(local)) return true;

@@ -22,7 +22,7 @@ import {
   mapPeople,
 } from '@/lib/companyenrich';
 import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
-import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees } from '@/lib/tomba';
+import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
@@ -57,6 +57,7 @@ const PRICE = {
   competitors: 0.01, // tomba /v1/similar
   aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
   tombaEmployees: 0.01, // tomba /v1/domain-search (employee-list augment, flat)
+  emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
 };
 
 // Worst-case cost of one search, reserved against the hard cap up front and
@@ -67,7 +68,8 @@ const ESTIMATE_USD =
   PRICE.perPerson * PAGE_SIZE +
   PRICE.competitors +
   PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
-  PRICE.tombaEmployees; // employee-list augment (flat, fires on a thin CE list)
+  PRICE.tombaEmployees + // employee-list augment (flat, fires on a thin CE list)
+  PRICE.emailFormat; // domain email pattern (flat, always fires)
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -302,6 +304,15 @@ export async function POST(req: NextRequest) {
           .catch((err) => {
             noteQuota(err);
             write({ type: 'competitors', data: null, error: 'unavailable' });
+          }),
+        emailFormat(domain)
+          .then((raw) => {
+            spentUsd += PRICE.emailFormat;
+            const patterns = mapEmailFormat(raw);
+            if (patterns.length) write({ type: 'emailformat', patterns });
+          })
+          .catch(() => {
+            // Non-critical: missing format just means no pattern emails in UI.
           }),
       ];
 

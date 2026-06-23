@@ -71,6 +71,12 @@ export interface Competitor {
   industries?: string | null;
 }
 
+/** One entry from Tomba's /v1/email-format response. */
+export interface FormatPattern {
+  format: string;     // e.g. "{first}.{last}"
+  percentage: number; // dominant pattern's confidence, e.g. 98
+}
+
 export interface Employee {
   ceId: string | null; // CompanyEnrich person id (enables cheap email reveal)
   firstName?: string | null;
@@ -101,6 +107,7 @@ export type StreamMessage =
   | { type: 'workforce'; data: Workforce | null; error?: string }
   | { type: 'competitors'; data: Competitor[] | null; error?: string }
   | { type: 'employees'; data: Employee[]; totalAvailable: number; error?: string }
+  | { type: 'emailformat'; patterns: FormatPattern[] }
   // Aborts the report mid-stream and shows a full-screen error (e.g. the
   // Orthogonal key hit its limit, so every section is failing the same way).
   | { type: 'fatal'; error: SearchError['error'] }
@@ -118,9 +125,14 @@ export interface SearchError {
   retryAfterSec?: number;
 }
 
+/** One email hit from the multi-source reveal route. */
+export interface EmailHit {
+  email: string;
+  source: 'company-enrich' | 'apollo' | 'contactout';
+}
+
 // Response shape for the on-demand reveal route.
 export interface RevealResult {
-  email: string | null;
-  phone?: string | null;
-  source: 'company-enrich' | 'contactout' | null;
+  emails: EmailHit[];
+  phone: string | null;
 }
