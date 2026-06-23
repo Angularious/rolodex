@@ -343,3 +343,13 @@ browser). To typecheck without touching dev, use `npx tsc --noEmit` instead.
 - Run `npm run build` before committing (catches type errors).
 - Commit messages end with: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 - Only commit/push when asked.
+- **Git identity (REQUIRED):** every commit must use `Angularious <jerry@orthogonal.sh>`. The
+  repo already has this set locally (`.git/config`); the global git config defaults to Gmail,
+  which is wrong for this repo. Before any commit, verify with `git config user.name` (should
+  return `Angularious`) and `git config user.email` (should return `jerry@orthogonal.sh`). If
+  the wrong identity is active, run:
+  ```
+  git config user.name "Angularious"
+  git config user.email "jerry@orthogonal.sh"
+  ```
+  **Never use `--global`** — that would change the identity for all repos on the machine.

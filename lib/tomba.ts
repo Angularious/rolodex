@@ -48,7 +48,7 @@ export function mapEmailFormat(raw: RawEmailFormat): FormatPattern[] {
 
 export function mapCompetitors(raw: RawSimilar): Competitor[] {
   return (raw?.data ?? [])
-    .filter((c) => c?.website_url)
+    .filter((c) => c?.website_url && c?.name)
     .map((c) => ({
       domain: (c.website_url as string).toLowerCase(),
       name: c.name ?? null,
@@ -111,6 +111,7 @@ const ROLE_MAILBOX = new Set([
 export function isRoleEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   const local = email.split('@')[0].toLowerCase().split('+')[0];
+  if (local.length < 2) return true; // single-char local-part (e.g. r@spacex.com) → role/catch-all
   if (ROLE_MAILBOX.has(local)) return true;
   if (ROLE_MAILBOX.has(local.replace(/[._-]/g, ''))) return true;
   return false;
@@ -132,11 +133,17 @@ function isRealPerson(p: RawTombaPerson): boolean {
   return (first.length >= 2 && last.length >= 1) || fullTokens.length >= 2;
 }
 
-export function mapTombaEmployees(raw: RawDomainSearch): Employee[] {
+export function mapTombaEmployees(raw: RawDomainSearch, domain?: string): Employee[] {
   const out: Employee[] = [];
   const seen = new Set<string>();
   for (const p of raw?.data?.emails ?? []) {
     if (!isRealPerson(p)) continue; // drop role mailboxes / nameless / program inboxes
+    // Drop rows whose email domain doesn't match the searched domain — Tomba can
+    // return employees from a same-named company (e.g. plaid.co.jp for plaid.com).
+    if (domain && p.email) {
+      const emailDomain = p.email.split('@')[1]?.toLowerCase();
+      if (emailDomain && emailDomain !== domain.toLowerCase()) continue;
+    }
     const fullName =
       p.full_name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
     if (!fullName) continue;
@@ -207,5 +214,71 @@ export function mergeEmployees(ce: Employee[], tomba: Employee[], cap: number): 
     seenName.add(nk);
     merged.push(t);
   }
+  return merged.slice(0, cap);
+}
+
+/**
+ * Three-source merge: CE (highest quality) → ContactOut → Tomba filler.
+ *
+ * Strategy:
+ *   1. Build a Tomba email index by normalized LinkedIn URL so ContactOut rows
+ *      that share a LinkedIn get a free Tomba email injected (unverified).
+ *   2. Add all CE rows (they have ceId for cheap verified reveals).
+ *   3. Add ContactOut rows not already in CE (dedup by LinkedIn then name),
+ *      enriching each with a Tomba pattern email where the LinkedIn matches.
+ *   4. Fill remaining slots with Tomba-only rows (no CE/CO match).
+ */
+export function mergeAllEmployees(
+  ce: Employee[],
+  co: Employee[],
+  tomba: Employee[],
+  cap: number,
+): Employee[] {
+  // Index Tomba rows by normalized LinkedIn for email enrichment of CO rows.
+  const tombaByLinkedin = new Map<string, Employee>();
+  for (const t of tomba) {
+    const lk = normLinkedin(t.linkedin);
+    if (lk) tombaByLinkedin.set(lk, t);
+  }
+
+  const seenLink = new Set<string>();
+  const seenName = new Set<string>();
+
+  // Step 1: seed seen sets with CE rows.
+  for (const e of ce) {
+    const lk = normLinkedin(e.linkedin);
+    if (lk) seenLink.add(lk);
+    seenName.add(nameKey(e.fullName));
+  }
+  const merged = [...ce];
+
+  // Step 2: add ContactOut rows not in CE, optionally enriched with Tomba email.
+  for (const c of co) {
+    if (merged.length >= cap) break;
+    const lk = normLinkedin(c.linkedin);
+    const nk = nameKey(c.fullName);
+    if ((lk && seenLink.has(lk)) || seenName.has(nk)) continue;
+    if (lk) seenLink.add(lk);
+    seenName.add(nk);
+    // Enrich with Tomba pattern email if LinkedIn matches.
+    const tombaMatch = lk ? tombaByLinkedin.get(lk) : undefined;
+    merged.push(
+      tombaMatch?.email
+        ? { ...c, email: tombaMatch.email, emailUnverified: true }
+        : c,
+    );
+  }
+
+  // Step 3: fill remaining slots with Tomba-only rows.
+  for (const t of tomba) {
+    if (merged.length >= cap) break;
+    const lk = normLinkedin(t.linkedin);
+    const nk = nameKey(t.fullName);
+    if ((lk && seenLink.has(lk)) || seenName.has(nk)) continue;
+    if (lk) seenLink.add(lk);
+    seenName.add(nk);
+    merged.push(t);
+  }
+
   return merged.slice(0, cap);
 }

@@ -17,6 +17,35 @@ export function timeAgo(iso?: string | null): string | null {
 }
 
 let regionNames: Intl.DisplayNames | null = null;
+
+// Reverse map: English country name (lowercase) → ISO-2 code. Built once lazily.
+let reverseRegion: Map<string, string> | null = null;
+function getReverse(): Map<string, string> {
+  if (reverseRegion) return reverseRegion;
+  reverseRegion = new Map();
+  try {
+    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+    const codes = [
+      'US','GB','CA','AU','DE','FR','IN','CN','JP','BR','MX','SG','NL','SE','CH',
+      'IE','IL','NZ','AE','ES','IT','PL','PT','NO','DK','FI','AT','BE','CZ','HU',
+      'RO','GR','BG','HR','SK','SI','EE','LV','LT','TR','UA','RU','KR','TW','HK',
+      'TH','VN','PH','ID','MY','PK','BD','NG','KE','ZA','GH','EG','AR','CO','CL',
+      'PE','VE','EC','BO','PY','UY','CU','DO','GT','HN','SV','NI','CR','PA','PR',
+    ];
+    for (const code of codes) {
+      const name = dn.of(code);
+      if (name) reverseRegion.set(name.toLowerCase(), code);
+    }
+  } catch { /* ignore — falls back to null */ }
+  return reverseRegion;
+}
+
+/** Convert an English country name ("United States") to ISO-2 code ("US"), or null. */
+export function countryCode(name: string | null | undefined): string | null {
+  if (!name) return null;
+  return getReverse().get(name.toLowerCase()) ?? null;
+}
+
 export function countryName(code: string): string {
   if (!code) return code;
   try {

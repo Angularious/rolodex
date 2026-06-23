@@ -391,6 +391,7 @@ export function mapPeople(raw: RawPeopleSearch): {
       photo: p.image_url ?? null,
       startedAt: role.startDate ?? null,
       email: null,
+      source: 'company-enrich',
     });
   }
 

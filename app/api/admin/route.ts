@@ -9,10 +9,9 @@ export const dynamic = 'force-dynamic';
 function authorized(req: NextRequest): boolean {
   const expected = process.env.ADMIN_PASSWORD;
   if (!expected) return false; // locked unless a password is configured
-  const key =
-    req.nextUrl.searchParams.get('key') ||
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-    '';
+  // Accept only the Authorization header — never a query param, which leaks
+  // the password into server logs, CDN access logs, and browser history.
+  const key = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   return key === expected;
 }
 

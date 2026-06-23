@@ -95,9 +95,14 @@ export interface Employee {
   // True when `email` is an unverified, pattern-derived address (Tomba
   // domain-search filler row) rather than a verified reveal. UI labels it.
   emailUnverified?: boolean;
-  // Provenance — Tomba filler rows lack a photo / city / ceId and carry an
-  // unverified inline email; CE rows are the richer, verified-reveal source.
-  source?: 'company-enrich' | 'tomba';
+  // True when ContactOut has a work email on file (contact_availability.work_email).
+  // Only set on ContactOut rows; undefined/false otherwise.
+  hasContactOutEmail?: boolean;
+  // Provenance — drives confidence badge in the UI.
+  // company-enrich: LinkedIn-verified, ceId for cheap reveals
+  // contactout:     quality profile, photo, LinkedIn; no inline email
+  // tomba:          pattern/unverified inline email, weaker identity signal
+  source?: 'company-enrich' | 'contactout' | 'tomba';
 }
 
 // NDJSON stream message types emitted by /api/search
