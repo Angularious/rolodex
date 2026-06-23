@@ -17,11 +17,9 @@ import {
   profileById,
   workforce,
   peopleSearch,
-  peopleSearchSenior,
   mapCompany,
   mapWorkforce,
   mapPeople,
-  mapDecisionMakers,
 } from '@/lib/companyenrich';
 import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
 import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeEmployees } from '@/lib/tomba';
@@ -43,20 +41,12 @@ const PAGE_SIZE = (() => {
   return Number.isFinite(n) && n > 0 && n <= 25 ? n : 8;
 })();
 
-// Decision-makers page size. Decision-makers come from a seniority-filtered CE
-// people-search (per-result priced, $0.0245 each), so this is a real cost knob —
-// kept modest. Env-tunable without a deploy.
-const DM_PAGE_SIZE = (() => {
-  const n = parseInt(process.env.DM_PAGE_SIZE ?? '', 10);
-  return Number.isFinite(n) && n > 0 && n <= 25 ? n : 12;
-})();
-
 // Max combined employees to show (CE rows + deduped Tomba fillers). Tomba's
 // $0.01 domain-search returns up to 50 for the same price, so this is purely a
 // display cap, env-tunable.
 const EMPLOYEE_DISPLAY_MAX = (() => {
   const n = parseInt(process.env.EMPLOYEE_LIST_MAX ?? '', 10);
-  return Number.isFinite(n) && n > 0 && n <= 50 ? n : 15;
+  return Number.isFinite(n) && n > 0 && n <= 50 ? n : 30;
 })();
 
 // Per-call prices (USD) for the spend ledger. Keep in sync with the marketplace.
@@ -75,7 +65,6 @@ const ESTIMATE_USD =
   PRICE.enrich * 2 +
   PRICE.workforce +
   PRICE.perPerson * PAGE_SIZE +
-  PRICE.perPerson * DM_PAGE_SIZE + // decision-makers (seniority-filtered people-search)
   PRICE.competitors +
   PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
   PRICE.tombaEmployees; // employee-list augment (flat, fires on a thin CE list)
@@ -313,15 +302,6 @@ export async function POST(req: NextRequest) {
           .catch((err) => {
             noteQuota(err);
             write({ type: 'competitors', data: null, error: 'unavailable' });
-          }),
-        peopleSearchSenior(domain, DM_PAGE_SIZE)
-          .then((raw) => {
-            spentUsd += PRICE.perPerson * DM_PAGE_SIZE;
-            write({ type: 'decisionmakers', data: mapDecisionMakers(raw) });
-          })
-          .catch((err) => {
-            noteQuota(err);
-            write({ type: 'decisionmakers', data: null, error: 'unavailable' });
           }),
       ];
 

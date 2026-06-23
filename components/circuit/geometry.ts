@@ -6,7 +6,6 @@
 
 import type {
   Competitor,
-  DecisionMaker,
   DeptCount,
   Employee,
   FundingRound,
@@ -15,7 +14,6 @@ import type { GraphData } from '@/components/graph/types';
 
 export type CircuitCat =
   | 'departments'
-  | 'decisionMakers'
   | 'competitors'
   | 'employees'
   | 'tech'
@@ -24,14 +22,13 @@ export type CircuitCat =
 export type SlotName = 'right' | 'left' | 'top' | 'bottom' | 'topRight' | 'bottomLeft' | 'mLeft1' | 'mLeft2' | 'mLeft3' | 'mRight1' | 'mRight2' | 'mRight3';
 export type OutDir = 'right' | 'left' | 'up' | 'down';
 
-export type SubKind = 'department' | 'person' | 'competitor' | 'employee' | 'tech' | 'funding';
+export type SubKind = 'department' | 'competitor' | 'employee' | 'tech' | 'funding';
 
 export interface SubNode {
   id: string;
   label: string;
   sub?: string | null;
   kind: SubKind;
-  person?: DecisionMaker;
   employee?: Employee;
   department?: DeptCount;
   competitor?: Competitor;
@@ -60,7 +57,6 @@ const GRID_CAP = 30; // max sub-nodes rendered per cluster (count label stays re
 
 // Neon palette — saturated against pure black, mapped to existing data meaning.
 export const CIRCUIT_COLOR: Record<CircuitCat, string> = {
-  decisionMakers: '#3b82f6', // blue
   departments: '#22d3ee', // cyan
   competitors: '#ec4899', // magenta
   employees: '#34d399', // green
@@ -69,7 +65,6 @@ export const CIRCUIT_COLOR: Record<CircuitCat, string> = {
 };
 
 const CAT_TITLE: Record<CircuitCat, string> = {
-  decisionMakers: 'DECISION-MAKERS',
   departments: 'DEPARTMENTS',
   competitors: 'COMPETITORS',
   employees: 'EMPLOYEE LIST',
@@ -77,11 +72,9 @@ const CAT_TITLE: Record<CircuitCat, string> = {
   funding: 'FUNDING',
 };
 
-// Preferred slot per category — the core four land on the cardinals; tech/funding
-// take the diagonals. departments→left, employees→right avoids squishing with
-// the diagonal slots.
+// Preferred slot per category — departments/employees on the cardinals left/right;
+// competitors on bottom; tech/funding take the diagonals.
 const CAT_SLOT: Record<CircuitCat, SlotName> = {
-  decisionMakers: 'top',
   departments: 'left',
   competitors: 'bottom',
   employees: 'right',
@@ -90,15 +83,14 @@ const CAT_SLOT: Record<CircuitCat, SlotName> = {
 };
 
 // Mobile two-column layout (< 768px): 3 buses stacked per side flanking the center.
-// Left: Decision-Makers (top) · Departments (middle) · Funding (bottom)
+// Left: Departments (top) · Funding (middle) · (bottom unused)
 // Right: Tech Stack (top) · Employee List (middle) · Competitors (bottom)
 export const CAT_SLOT_MOBILE: Record<CircuitCat, SlotName> = {
-  decisionMakers: 'mLeft1',
-  departments:    'mLeft2',
-  funding:        'mLeft3',
-  tech:           'mRight1',
-  employees:      'mRight2',
-  competitors:    'mRight3',
+  departments: 'mLeft1',
+  funding:     'mLeft2',
+  tech:        'mRight1',
+  employees:   'mRight2',
+  competitors: 'mRight3',
 };
 
 export const SLOT_POS: Record<SlotName, [number, number]> = {
@@ -141,12 +133,6 @@ export function buildBuses(d: GraphData, slotMap?: Record<CircuitCat, SlotName>)
   const push = (cat: CircuitCat, nodes: SubNode[], count = nodes.length) => {
     if (nodes.length) out.push({ cat, title: CAT_TITLE[cat], count, color: CIRCUIT_COLOR[cat], slot: map[cat], nodes });
   };
-
-  const dms = d.decisionMakers ?? [];
-  push(
-    'decisionMakers',
-    dms.map((p, i) => ({ id: `dm-${i}`, label: p.name, sub: p.title ?? p.headline ?? null, kind: 'person', person: p })),
-  );
 
   const depts = d.workforce?.departments ?? [];
   push(

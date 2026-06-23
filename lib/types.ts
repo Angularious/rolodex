@@ -94,34 +94,6 @@ export interface Employee {
   source?: 'company-enrich' | 'tomba';
 }
 
-export interface DecisionMaker {
-  name: string;
-  ceId?: string | null; // Company Enrich person id → enables the cheap reveal tier
-  title?: string | null;
-  headline?: string | null;
-  location?: string | null;
-  country?: string | null; // ISO-2 uppercased
-  seniority?: string | null;
-  jobFunction?: string | null;
-  linkedin?: string | null;
-  // Rich profile fields (populated when the source provides them).
-  photo?: string | null; // profile picture URL
-  summary?: string | null; // bio
-  followers?: number | null;
-  industry?: string | null;
-  skills?: string[]; // top skills
-  experience?: string[]; // pre-formatted work-history lines
-  education?: string[]; // pre-formatted education lines
-  // Pre-reveal contact coverage. Unknown (false) for CE-sourced decision-makers
-  // — the UI no longer gates on these; reveal is always offered.
-  hasWorkEmail: boolean;
-  hasPersonalEmail: boolean;
-  hasPhone: boolean;
-  // Revealed on demand via /api/reveal; null until then.
-  email?: string | null;
-  phone?: string | null;
-}
-
 // NDJSON stream message types emitted by /api/search
 export type StreamMessage =
   | { type: 'meta'; domain: string; resolvedFrom?: string | null }
@@ -129,7 +101,6 @@ export type StreamMessage =
   | { type: 'workforce'; data: Workforce | null; error?: string }
   | { type: 'competitors'; data: Competitor[] | null; error?: string }
   | { type: 'employees'; data: Employee[]; totalAvailable: number; error?: string }
-  | { type: 'decisionmakers'; data: DecisionMaker[] | null; error?: string }
   // Aborts the report mid-stream and shows a full-screen error (e.g. the
   // Orthogonal key hit its limit, so every section is failing the same way).
   | { type: 'fatal'; error: SearchError['error'] }

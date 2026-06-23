@@ -5,7 +5,6 @@
 import { callOrthogonal } from './orthogonal';
 import type {
   Company,
-  DecisionMaker,
   DeptCount,
   Employee,
   FundingRound,
@@ -150,23 +149,6 @@ export const peopleSearch = (domain: string, pageSize = 25, page = 1) =>
     API,
     '/people/search',
     { domains: [domain], pageSize, page },
-    'POST',
-  );
-
-// Seniorities that constitute "decision-makers". CE expects hyphenated values.
-const DM_SENIORITIES = ['c-suite', 'founder', 'owner', 'partner', 'vp', 'head', 'director'];
-
-/**
- * Senior people at a domain — the decision-makers list. A seniority-filtered
- * people-search; far better coverage than a generic decision-makers endpoint
- * for companies whose graph is muddied by acquisitions (e.g. ContactOut returns
- * the acquired team for figma.com). Per-result priced like `peopleSearch`.
- */
-export const peopleSearchSenior = (domain: string, pageSize = 12) =>
-  callOrthogonal<RawPeopleSearch>(
-    API,
-    '/people/search',
-    { domains: [domain], seniority: DM_SENIORITIES, pageSize, page: 1 },
     'POST',
   );
 
@@ -370,23 +352,6 @@ function matchedRole(p: RawPerson): RawExperience | null {
   return role;
 }
 
-// One experience row → a compact "Position · Company (2021–Present)" line.
-function fmtExperience(e: RawExperience): string {
-  const co = e.company?.name || e.companyName || '';
-  const start = (e.startDate ?? '').slice(0, 4);
-  const end = e.isCurrent ? 'Present' : (e.endDate ?? '').slice(0, 4);
-  const years = start && end ? `${start}–${end}` : start || end || '';
-  let out = e.position || co || 'Role';
-  if (co && e.position) out += ` · ${co}`;
-  if (years) out += ` (${years})`;
-  return out;
-}
-
-// Order decision-makers most-senior first.
-const DM_RANK: Record<string, number> = {
-  founder: 0, owner: 0, 'c-suite': 1, cxo: 1, partner: 2, vp: 3, head: 4, director: 5,
-};
-
 export function mapPeople(raw: RawPeopleSearch): {
   employees: Employee[];
   totalAvailable: number;
@@ -432,54 +397,3 @@ export function mapPeople(raw: RawPeopleSearch): {
   return { employees, totalAvailable: raw?.totalItems ?? employees.length };
 }
 
-// Decision-makers from a seniority-filtered people-search. Same relevance gate
-// as mapPeople (so board members / investors are dropped), mapped to the
-// DecisionMaker shape with a ceId for the cheap reveal tier. Coverage flags are
-// unknown from CE (set false; the UI doesn't gate on them). Sorted seniors-first.
-export function mapDecisionMakers(raw: RawPeopleSearch): DecisionMaker[] {
-  const rows = raw?.items ?? [];
-  const out: DecisionMaker[] = [];
-  const seen = new Set<string>();
-
-  for (const p of rows) {
-    const role = matchedRole(p);
-    if (!role) continue;
-
-    const key = (p.socials?.linkedin_url ?? '').toLowerCase() || String(p.id ?? p.name ?? '');
-    if (key && seen.has(key)) continue;
-    if (key) seen.add(key);
-
-    const code = p.location?.country?.code ? p.location.country.code.toUpperCase() : null;
-    const experience = (p.experiences ?? []).slice(0, 5).map(fmtExperience).filter(Boolean);
-
-    out.push({
-      ceId: p.id != null ? String(p.id) : null,
-      name: p.name || [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Unknown',
-      title: role.position ?? null,
-      headline: null,
-      location: p.location?.address ?? p.location?.country?.name ?? null,
-      country: code,
-      seniority: role.seniority ?? null,
-      jobFunction: deptLabel(role.department),
-      linkedin: p.socials?.linkedin_url ?? null,
-      photo: p.image_url ?? null,
-      summary: null,
-      followers: null,
-      industry: null,
-      skills: [],
-      experience,
-      education: [],
-      hasWorkEmail: false,
-      hasPersonalEmail: false,
-      hasPhone: false,
-      email: null,
-      phone: null,
-    });
-  }
-
-  return out.sort(
-    (a, b) =>
-      (DM_RANK[(a.seniority ?? '').toLowerCase()] ?? 9) -
-      (DM_RANK[(b.seniority ?? '').toLowerCase()] ?? 9),
-  );
-}

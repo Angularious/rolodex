@@ -8,7 +8,6 @@ import type {
   Competitor,
   Workforce,
   Employee,
-  DecisionMaker,
   RevealResult,
   SearchError,
 } from '@/lib/types';
@@ -16,7 +15,6 @@ import { ToastProvider } from '@/components/Toast';
 import CompanyCard, { CompanyCardSkeleton } from '@/components/CompanyCard';
 import Tabs, { type TabId } from '@/components/Tabs';
 import EmployeesTab from '@/components/EmployeesTab';
-import DecisionMakersTab from '@/components/DecisionMakersTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
 import dynamic from 'next/dynamic';
@@ -57,9 +55,6 @@ interface Report {
   employeesTotal: number;
   employeesLoading: boolean;
   employeesError: boolean;
-  decisionMakers: DecisionMaker[] | null;
-  decisionMakersLoading: boolean;
-  decisionMakersError: boolean;
   cost: number;
   durationMs: number;
 }
@@ -81,9 +76,6 @@ function freshReport(inputEcho: string): Report {
     employeesTotal: 0,
     employeesLoading: true,
     employeesError: false,
-    decisionMakers: null,
-    decisionMakersLoading: true,
-    decisionMakersError: false,
     cost: 0,
     durationMs: 0,
   };
@@ -118,18 +110,6 @@ function buildTrace(r: Report, done: boolean): TraceStep[] {
       status: status(r.employeesLoading, r.employeesError, r.employees.length > 0),
       count: r.employees.length || null,
       countLabel: 'people',
-    },
-    {
-      key: 'decisionmakers',
-      label: 'Surface decision-makers',
-      hint: 'Senior contacts + coverage',
-      status: status(
-        r.decisionMakersLoading,
-        r.decisionMakersError,
-        !!r.decisionMakers && r.decisionMakers.length > 0,
-      ),
-      count: r.decisionMakers?.length ?? null,
-      countLabel: 'contacts',
     },
     {
       key: 'competitors',
@@ -199,9 +179,6 @@ export default function Home() {
       employeesTotal: SAMPLE.employees.length,
       employeesLoading: false,
       employeesError: false,
-      decisionMakers: SAMPLE.decisionMakers,
-      decisionMakersLoading: false,
-      decisionMakersError: false,
       cost: 0,
       durationMs: 0,
     });
@@ -264,8 +241,6 @@ export default function Home() {
                   employeesLoading: false,
                   employeesError: msg.data.length === 0 && !!msg.error,
                 };
-              case 'decisionmakers':
-                return { ...r, decisionMakers: msg.data, decisionMakersLoading: false, decisionMakersError: !msg.data && !!msg.error };
               case 'done':
                 return {
                   ...r,
@@ -274,7 +249,6 @@ export default function Home() {
                   workforceLoading: false,
                   competitorsLoading: false,
                   employeesLoading: false,
-                  decisionMakersLoading: false,
                 };
               default:
                 return r;
@@ -494,8 +468,6 @@ export default function Home() {
                     company: report.company,
                     competitors: report.competitors,
                     competitorsLoading: report.competitorsLoading,
-                    decisionMakers: report.decisionMakers,
-                    decisionMakersLoading: report.decisionMakersLoading,
                     workforce: report.workforce,
                     workforceLoading: report.workforceLoading,
                     employees: report.employees,
@@ -520,8 +492,6 @@ export default function Home() {
                     employees: report.employees,
                     employeesTotal: report.employeesTotal,
                     employeesLoading: report.employeesLoading,
-                    decisionMakers: report.decisionMakers,
-                    decisionMakersLoading: report.decisionMakersLoading,
                   }}
                   onReveal={revealContact}
                   onSearchCompany={(d) => requestSearch(d)}
@@ -548,7 +518,6 @@ export default function Home() {
                 onChange={setActiveTab}
                 tabs={[
                   { id: 'employees', label: 'Employees', count: report.employees.length || null },
-                  { id: 'decisionmakers', label: 'Decision-makers', count: report.decisionMakers?.length ?? null },
                   { id: 'departments', label: 'Departments', count: report.workforce?.departments.length ?? null },
                   { id: 'competitors', label: 'Competitors', count: report.competitors?.length ?? null },
                 ]}
@@ -564,15 +533,6 @@ export default function Home() {
                     onReveal={revealContact}
                     onConnectClick={connectOrthogonal}
                     error={report.employeesError}
-                    onRetry={() => requestSearch(report.domain)}
-                  />
-                )}
-                {activeTab === 'decisionmakers' && (
-                  <DecisionMakersTab
-                    decisionMakers={report.decisionMakers}
-                    loading={report.decisionMakersLoading}
-                    onReveal={revealContact}
-                    error={report.decisionMakersError}
                     onRetry={() => requestSearch(report.domain)}
                   />
                 )}
@@ -609,9 +569,9 @@ export default function Home() {
           onClick={() => switchView(view === 'graph' ? 'summary' : 'graph')}
           className="fixed bottom-6 right-4 z-40 font-mono text-[0.7rem] tracking-[0.16em] px-4 py-2.5 bg-black/80 backdrop-blur-sm transition-all active:scale-95"
           style={{
-            border: `1px solid ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers}`,
-            color: view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers,
-            boxShadow: `0 0 18px ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.decisionMakers}28, 0 4px 16px rgba(0,0,0,0.5)`,
+            border: `1px solid ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.employees}`,
+            color: view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.employees,
+            boxShadow: `0 0 18px ${view === 'graph' ? CIRCUIT_COLOR.departments : CIRCUIT_COLOR.employees}28, 0 4px 16px rgba(0,0,0,0.5)`,
           }}
         >
           {view === 'graph' ? '◊ SUMMARY VIEW' : '◈ GRAPH VIEW'}
