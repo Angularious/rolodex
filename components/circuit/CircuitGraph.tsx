@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphData } from '@/components/graph/types';
-import type { DecisionMaker, Employee } from '@/lib/types';
+import type { Employee } from '@/lib/types';
 import type { RevealFn } from '@/components/EmployeesTab';
 import {
   buildBuses,
@@ -91,8 +91,8 @@ function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number
   const S = 52;
   const TAP = 72; // invisible hit area — larger for touch
   const label = node.label.length > 16 ? node.label.slice(0, 15) + '…' : node.label;
-  const photo = node.person?.photo ?? node.employee?.photo ?? null;
-  const hasPerson = node.kind === 'person' || node.kind === 'employee';
+  const photo = node.employee?.photo ?? null;
+  const hasPerson = node.kind === 'employee';
   const initials = hasPerson ? getInitials(node.label) : null;
   return (
     <g style={{ cursor: 'pointer' }} onClick={onClick} className="circ-chip">
@@ -543,7 +543,6 @@ function DetailPanel({
             <button onClick={onClose} className="text-[#5b6b82] hover:text-white">✕</button>
           </div>
 
-          {node.kind === 'person' && node.person && <PersonBody person={node.person} id={node.id} color={color} reveal={reveal} st={revealMap[node.id]} />}
           {node.kind === 'employee' && node.employee && <EmployeeBody emp={node.employee} id={node.id} color={color} reveal={reveal} st={revealMap[node.id]} />}
           {node.kind === 'department' && node.department && (
             <div>
@@ -587,7 +586,7 @@ function DetailPanel({
 }
 
 function kindLabel(k: SubNode['kind']): string {
-  return { person: 'DECISION-MAKER', employee: 'EMPLOYEE', department: 'DEPARTMENT', competitor: 'COMPETITOR', tech: 'TECHNOLOGY', funding: 'FUNDING ROUND' }[k];
+  return { employee: 'EMPLOYEE', department: 'DEPARTMENT', competitor: 'COMPETITOR', tech: 'TECHNOLOGY', funding: 'FUNDING ROUND' }[k];
 }
 
 function RevealBlock({ id, color, ceId, linkedin, reveal, st, noContact, inlineEmail }: { id: string; color: string; ceId?: string | null; linkedin?: string | null; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState; noContact?: boolean; inlineEmail?: string | null }) {
@@ -643,50 +642,6 @@ function InitialsAvatar({ name, color }: { name: string; color: string }) {
       style={{ background: `${color}1a`, border: `1px solid ${color}50`, color, fontFamily: FONT }}
     >
       {getInitials(name)}
-    </div>
-  );
-}
-
-function PersonBody({ person, id, color, reveal, st }: { person: DecisionMaker; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
-  return (
-    <div>
-      {person.photo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={person.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
-      ) : (
-        <InitialsAvatar name={person.name} color={color} />
-      )}
-      <PRow k="TITLE" v={person.title} />
-      <PRow k="FUNCTION" v={person.jobFunction} />
-      <PRow k="SENIORITY" v={person.seniority} />
-      <PRow k="LOCATION" v={person.location} />
-      {person.followers != null && <PRow k="FOLLOWERS" v={person.followers.toLocaleString()} />}
-      {person.summary && <p className="mt-3 text-[0.74rem] leading-relaxed text-[#9fb1c6] line-clamp-5">{person.summary}</p>}
-      {person.experience && person.experience.length > 0 && (
-        <div className="mt-3">
-          <div className="text-[0.6rem] tracking-[0.24em] text-[#5b6b82] mb-1">EXPERIENCE</div>
-          <ul className="text-[0.72rem] text-[#9fb1c6] space-y-0.5">{person.experience.map((x, i) => <li key={i}>· {x}</li>)}</ul>
-        </div>
-      )}
-      {person.education && person.education.length > 0 && (
-        <div className="mt-3">
-          <div className="text-[0.6rem] tracking-[0.24em] text-[#5b6b82] mb-1">EDUCATION</div>
-          <ul className="text-[0.72rem] text-[#9fb1c6] space-y-0.5">{person.education.map((x, i) => <li key={i}>· {x}</li>)}</ul>
-        </div>
-      )}
-      {person.skills && person.skills.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {person.skills.map((s) => (
-            <span key={s} className="text-[0.62rem] tracking-[0.08em] border px-1.5 py-0.5 text-[#9fb1c6]" style={{ borderColor: '#1c2940' }}>{s}</span>
-          ))}
-        </div>
-      )}
-      {person.linkedin && (
-        <a href={person.linkedin} target="_blank" rel="noreferrer" className="inline-block mt-3 text-[0.72rem]" style={{ color }}>
-          LINKEDIN ↗
-        </a>
-      )}
-      <RevealBlock id={id} color={color} ceId={person.ceId} linkedin={person.linkedin} reveal={reveal} st={st} />
     </div>
   );
 }

@@ -4,8 +4,8 @@
 // CircuitGraph (CIRCUIT_COLOR palette, bracket corners, monospace, dark bg)
 // but laid out as stacked panels for small screens.
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Company, Competitor, Workforce, Employee, DecisionMaker } from '@/lib/types';
+import { useState, useCallback } from 'react';
+import type { Company, Competitor, Workforce, Employee } from '@/lib/types';
 import type { RevealFn } from '@/components/EmployeesTab';
 import { CIRCUIT_COLOR } from '@/components/circuit/geometry';
 import { Avatar } from '@/components/DecisionMakersTab';
@@ -24,8 +24,6 @@ export interface SummaryData {
   employees: Employee[];
   employeesTotal: number;
   employeesLoading: boolean;
-  decisionMakers: DecisionMaker[] | null;
-  decisionMakersLoading: boolean;
 }
 
 interface RevealState {
@@ -35,7 +33,7 @@ interface RevealState {
   phone: string | null;
 }
 
-type SummaryTab = 'people' | 'employees' | 'departments' | 'competitors' | 'tech';
+type SummaryTab = 'employees' | 'departments' | 'competitors' | 'tech';
 
 // ---------------------------------------------------------------------------
 // Bracket corner ornaments (CSS-based, 4 corners)
@@ -83,7 +81,7 @@ export default function SummaryView({
   onSearchCompany: (domain: string) => void;
 }) {
   const toast = useToast();
-  const [tab, setTab] = useState<SummaryTab>('people');
+  const [tab, setTab] = useState<SummaryTab>('employees');
   const [fundingOpen, setFundingOpen] = useState(false);
   const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
 
@@ -94,14 +92,13 @@ export default function SummaryView({
   const totalEmployees = data.workforce?.total ?? (data.employeesTotal || null);
 
   const tabDefs: { id: SummaryTab; label: string; count: number | null; color: string; loading: boolean }[] = [
-    { id: 'people', label: 'Decision-Makers', count: data.decisionMakers?.length ?? null, color: CIRCUIT_COLOR.decisionMakers, loading: data.decisionMakersLoading },
     { id: 'employees', label: 'Employees', count: data.employees.length || null, color: CIRCUIT_COLOR.employees, loading: data.employeesLoading },
     { id: 'departments', label: 'Departments', count: data.workforce?.departments.length ?? null, color: CIRCUIT_COLOR.departments, loading: data.workforceLoading },
     { id: 'competitors', label: 'Competitors', count: data.competitors?.length ?? null, color: CIRCUIT_COLOR.competitors, loading: data.competitorsLoading },
     { id: 'tech', label: 'Tech Stack', count: company?.tech.length ?? null, color: CIRCUIT_COLOR.tech, loading: false },
   ];
 
-  const activeColor = tabDefs.find(t => t.id === tab)?.color ?? CIRCUIT_COLOR.decisionMakers;
+  const activeColor = tabDefs.find(t => t.id === tab)?.color ?? CIRCUIT_COLOR.employees;
 
   const reveal = useCallback(async (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => {
     if (revealMap[id]?.loading || revealMap[id]?.tried) return;
@@ -268,14 +265,6 @@ export default function SummaryView({
       <div style={{ margin: '8px 14px', position: 'relative', border: `1px solid ${activeColor}22`, background: 'rgba(5,8,16,0.52)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', padding: 12 }}>
         <BracketCorners color={activeColor} size={12} />
 
-        {tab === 'people' && (
-          <PeoplePane
-            decisionMakers={data.decisionMakers}
-            loading={data.decisionMakersLoading}
-            revealMap={revealMap}
-            onReveal={reveal}
-          />
-        )}
         {tab === 'employees' && (
           <EmployeesPane
             employees={data.employees}
@@ -345,46 +334,6 @@ function EmptyPane({ label }: { label: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// People (decision-makers) pane
-// ---------------------------------------------------------------------------
-function PeoplePane({
-  decisionMakers,
-  loading,
-  revealMap,
-  onReveal,
-}: {
-  decisionMakers: DecisionMaker[] | null;
-  loading: boolean;
-  revealMap: Record<string, RevealState>;
-  onReveal: (id: string, payload: { ceId?: string | null; linkedin?: string | null }) => void;
-}) {
-  if (loading && !decisionMakers) return <PaneLoadingSkeleton rows={5} />;
-  if (!decisionMakers || decisionMakers.length === 0) return <EmptyPane label="No decision-makers found" />;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {decisionMakers.map(dm => {
-        const id = dm.linkedin || dm.name;
-        return (
-          <PersonRow
-            key={id}
-            name={dm.name}
-            sub={dm.title || dm.headline || ''}
-            meta={[dm.jobFunction, dm.seniority, dm.location].filter(Boolean).join(' · ')}
-            photo={dm.photo}
-            linkedin={dm.linkedin}
-            color={CIRCUIT_COLOR.decisionMakers}
-            st={revealMap[id]}
-            onReveal={() => onReveal(id, { ceId: dm.ceId, linkedin: dm.linkedin })}
-            dm={dm}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Employees pane
 // ---------------------------------------------------------------------------
 function EmployeesPane({
@@ -431,7 +380,7 @@ function EmployeesPane({
 }
 
 // ---------------------------------------------------------------------------
-// Shared person row — left-aligned action buttons, optional expand for DMs
+// Shared person row
 // ---------------------------------------------------------------------------
 function PersonRow({
   name,
@@ -443,7 +392,6 @@ function PersonRow({
   noContact,
   st,
   onReveal,
-  dm,
 }: {
   name: string;
   sub: string;
@@ -454,15 +402,8 @@ function PersonRow({
   noContact?: boolean;
   st?: RevealState;
   onReveal: () => void;
-  dm?: DecisionMaker;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const got = st?.email || st?.phone;
-
-  const hasExtra = dm && Boolean(
-    dm.summary || dm.followers || (dm.skills?.length ?? 0) > 0 ||
-    (dm.experience?.length ?? 0) > 0 || (dm.education?.length ?? 0) > 0,
-  );
 
   const btnBase: React.CSSProperties = {
     fontSize: 9, letterSpacing: '0.14em', padding: '5px 11px',
@@ -471,7 +412,6 @@ function PersonRow({
 
   return (
     <div style={{ background: 'rgba(8,11,20,0.70)', border: '1px solid #1a2535' }}>
-      {/* Top: avatar + info + expand button */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px 6px' }}>
         <Avatar src={photo} name={name} size={34} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -479,33 +419,8 @@ function PersonRow({
           {sub && <div style={{ color: '#8aa0bd', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>}
           {meta && <div style={{ color: '#4a5a6e', fontSize: 10, letterSpacing: '0.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</div>}
         </div>
-        {hasExtra && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            title={expanded ? 'Collapse' : 'View full profile'}
-            style={{
-              flexShrink: 0,
-              width: 28,
-              height: 28,
-              border: `1px solid ${expanded ? color : '#2a3a50'}`,
-              color: expanded ? color : '#3b4a60',
-              background: expanded ? `${color}12` : 'transparent',
-              fontFamily: FONT,
-              fontSize: 14,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s',
-              marginTop: 2,
-            }}
-          >
-            {expanded ? '−' : '+'}
-          </button>
-        )}
       </div>
 
-      {/* Action buttons — left aligned */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px 10px', flexWrap: 'wrap' }}>
         {linkedin && (
           <a
@@ -544,88 +459,6 @@ function PersonRow({
           </button>
         )}
       </div>
-
-      {/* Expanded DM profile */}
-      {expanded && dm && <ExpandedDMDetail dm={dm} color={color} />}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Expanded decision-maker profile panel
-// ---------------------------------------------------------------------------
-function ExpandedDMDetail({ dm, color }: { dm: DecisionMaker; color: string }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, []);
-
-  return (
-    <div
-      ref={panelRef}
-      style={{ borderTop: `1px solid ${color}20`, padding: '12px 14px 14px', background: 'rgba(4,6,14,0.55)' }}
-      className="circ-fade-in"
-    >
-      {/* Profile meta */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-        {dm.followers != null && (
-          <span style={{ fontSize: 9, color: '#5b6b82', border: '1px solid #1c2940', padding: '3px 7px', letterSpacing: '0.1em', fontFamily: FONT }}>
-            {dm.followers.toLocaleString()} FOLLOWERS
-          </span>
-        )}
-        {dm.industry && (
-          <span style={{ fontSize: 9, color: '#5b6b82', border: '1px solid #1c2940', padding: '3px 7px', letterSpacing: '0.1em', fontFamily: FONT }}>
-            {dm.industry.toUpperCase()}
-          </span>
-        )}
-      </div>
-
-      {/* Bio */}
-      {dm.summary && (
-        <p style={{ fontSize: 12, color: '#8aa0bd', lineHeight: 1.55, marginBottom: 10 }}>{dm.summary}</p>
-      )}
-
-      {/* Skills */}
-      {(dm.skills?.length ?? 0) > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 9, color: `${color}80`, letterSpacing: '0.2em', marginBottom: 5 }}>SKILLS</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {dm.skills!.map(s => (
-              <span key={s} style={{ fontSize: 9, color: '#6b7a90', border: '1px solid #1c2940', padding: '3px 7px', letterSpacing: '0.08em', fontFamily: FONT }}>
-                {s}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Experience */}
-      {(dm.experience?.length ?? 0) > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 9, color: `${color}80`, letterSpacing: '0.2em', marginBottom: 5 }}>EXPERIENCE</div>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {dm.experience!.map((x, i) => (
-              <li key={i} style={{ fontSize: 11, color: '#8aa0bd', paddingLeft: 8, borderLeft: `1px solid ${color}30` }}>
-                {x}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Education */}
-      {(dm.education?.length ?? 0) > 0 && (
-        <div>
-          <div style={{ fontSize: 9, color: `${color}80`, letterSpacing: '0.2em', marginBottom: 5 }}>EDUCATION</div>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {dm.education!.map((x, i) => (
-              <li key={i} style={{ fontSize: 11, color: '#8aa0bd', paddingLeft: 8, borderLeft: `1px solid ${color}30` }}>
-                {x}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
