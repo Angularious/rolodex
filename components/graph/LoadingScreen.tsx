@@ -14,7 +14,7 @@ function StatusDot({ status }: { status: StepStatus }) {
 // Full-area space "mission control" loader shown while a report streams in.
 export default function LoadingScreen({ steps, domain }: { steps: TraceStep[]; domain: string }) {
   return (
-    <div className="graph-blue absolute inset-0 overflow-hidden bg-[#04050a] grid place-items-center">
+    <div className="graph-blue fixed inset-0 z-50 overflow-hidden bg-black/70 backdrop-blur-[2px] grid place-items-center">
       <div className="flex flex-col items-center gap-7 px-6 w-full">
         {/* orbiting system — centered */}
         <div className="gspace-loader" aria-hidden>

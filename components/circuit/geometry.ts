@@ -90,7 +90,7 @@ export const CAT_SLOT_MOBILE: Record<CircuitCat, SlotName> = {
   funding:     'mLeft2',
   tech:        'mRight1',
   employees:   'mRight2',
-  competitors: 'mRight3',
+  competitors: 'mLeft3',  // bottom-left (matches reference layout)
 };
 
 export const SLOT_POS: Record<SlotName, [number, number]> = {
@@ -100,13 +100,14 @@ export const SLOT_POS: Record<SlotName, [number, number]> = {
   bottom: [700, 1100],
   topRight: [1086, 348],
   bottomLeft: [314, 1052],
-  // Mobile two-column layout (< 768px viewport)
-  mLeft1: [280, 330],    // left col top
-  mLeft2: [280, 700],    // left col middle (same y as root)
-  mLeft3: [280, 1070],   // left col bottom
-  mRight1: [1120, 330],  // right col top
-  mRight2: [1120, 700],  // right col middle
-  mRight3: [1120, 1070], // right col bottom
+  // Mobile two-column layout (< 768px viewport) — tighter than desktop to
+  // fill the screen at 1.3× default zoom without buses running off-edge.
+  mLeft1: [320, 390],    // left col top
+  mLeft2: [320, 700],    // left col middle (same y as root)
+  mLeft3: [320, 1010],   // left col bottom
+  mRight1: [1080, 390],  // right col top
+  mRight2: [1080, 700],  // right col middle
+  mRight3: [1080, 1010], // right col bottom
 };
 
 export const SLOT_OUT: Record<SlotName, OutDir> = {
@@ -440,13 +441,20 @@ export function grid(bus: Bus): Grid {
 // ---------------------------------------------------------------------------
 // Camera — identity at root, pan+zoom toward a focused branch's cluster.
 // ---------------------------------------------------------------------------
-export function cameraFor(slot: SlotName | null): { tx: number; ty: number; scale: number } {
-  if (!slot) return { tx: 0, ty: 0, scale: 1 };
+export function cameraFor(slot: SlotName | null, mobile = false): { tx: number; ty: number; scale: number } {
+  if (!slot) {
+    // On mobile, zoom in 1.3× at root so the compact layout fills the screen.
+    if (mobile) {
+      const s = 1.3;
+      return { tx: CENTER * (1 - s), ty: CENTER * (1 - s), scale: s };
+    }
+    return { tx: 0, ty: 0, scale: 1 };
+  }
   const [bx, by] = SLOT_POS[slot];
   const u = unit(SLOT_OUT[slot]);
-  const off = 250; // push focus from the bus toward its grid
+  const off = 160; // push focus from bus toward its cluster grid
   const fx = bx + u.x * off;
   const fy = by + u.y * off;
-  const scale = 1.32;
+  const scale = 2.2;
   return { tx: CENTER - scale * fx, ty: CENTER - scale * fy, scale };
 }

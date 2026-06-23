@@ -27,9 +27,9 @@ import {
 
 const FONT = 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)';
 const TRACE = '#cfdcea'; // neutral trunk/trace color
-const MIN_SCALE = 0.4;
+const MIN_SCALE = 0.6;
 const MAX_SCALE = 3.0;
-const PAN_LIMIT = VIEW * 1.5; // max pan offset in SVG units (~2100)
+const PAN_LIMIT = VIEW * 0.5; // max pan offset — keeps circuit board in view
 
 function getInitials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase();
@@ -91,7 +91,6 @@ function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number
   const S = 52;
   const TAP = 72; // invisible hit area — larger for touch
   const label = node.label.length > 16 ? node.label.slice(0, 15) + '…' : node.label;
-  const photo = node.employee?.photo ?? null;
   const hasPerson = node.kind === 'employee';
   const initials = hasPerson ? getInitials(node.label) : null;
   return (
@@ -100,15 +99,7 @@ function GridChip({ x, y, color, node, active, onClick }: { x: number; y: number
       <rect x={x - TAP / 2} y={y - TAP / 2} width={TAP} height={TAP} fill="transparent" />
       <rect x={x - S / 2} y={y - S / 2} width={S} height={S} fill={active ? color : '#05070b'} opacity={active ? 0.16 : 0.9} />
       <Corners x={x - S / 2} y={y - S / 2} w={S} h={S} len={11} color={color} sw={active ? 2.4 : 1.6} />
-      {photo ? (
-        <g>
-          <defs>
-            <clipPath id={`cp-${node.id}`}><circle cx={x} cy={y} r={18} /></clipPath>
-          </defs>
-          <image href={photo} x={x - 18} y={y - 18} width={36} height={36} clipPath={`url(#cp-${node.id})`} preserveAspectRatio="xMidYMid slice" />
-          <circle cx={x} cy={y} r={18} fill="none" stroke={color} strokeWidth={1.2} opacity={0.6} />
-        </g>
-      ) : initials ? (
+      {initials ? (
         <g>
           <circle cx={x} cy={y} r={18} fill={color} opacity={0.15} />
           <circle cx={x} cy={y} r={18} stroke={color} strokeWidth={1.4} fill="none" opacity={0.7} />
@@ -263,7 +254,7 @@ export default function CircuitGraph({
     };
   }, []);
 
-  const cam = cameraFor(focused?.slot ?? null);
+  const cam = cameraFor(focused?.slot ?? null, isMobile);
 
   const stats = useMemo(() => {
     const nodes = 1 + buses.reduce((s, b) => s + b.count, 0);
@@ -423,17 +414,6 @@ export default function CircuitGraph({
           </>
         )}
       </div>
-
-      {/* mobile: back to summary button (bottom-left, only on narrow screens) */}
-      {onSwitchToTable && (
-        <button
-          onClick={onSwitchToTable}
-          className="sm:hidden absolute bottom-6 left-4 text-[#5b6b82] text-[0.68rem] tracking-[0.18em] border border-[#1c2940] px-3 py-2 bg-[#050a12]/90 backdrop-blur-sm active:text-white active:border-[#3b82f6]"
-          style={{ fontFamily: FONT }}
-        >
-          ← SUMMARY
-        </button>
-      )}
 
       {/* right detail panel */}
       <DetailPanel
@@ -649,12 +629,7 @@ function InitialsAvatar({ name, color }: { name: string; color: string }) {
 function EmployeeBody({ emp, id, color, reveal, st }: { emp: Employee; id: string; color: string; reveal: (id: string, p: { ceId?: string | null; linkedin?: string | null }) => void; st?: RevealState }) {
   return (
     <div>
-      {emp.photo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={emp.photo} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} className="w-16 h-16 object-cover border mb-3" style={{ borderColor: '#1c2940' }} />
-      ) : (
-        <InitialsAvatar name={emp.fullName} color={color} />
-      )}
+      <InitialsAvatar name={emp.fullName} color={color} />
       <PRow k="TITLE" v={emp.title} />
       <PRow k="DEPARTMENT" v={emp.department} />
       <PRow k="SENIORITY" v={emp.seniority} />

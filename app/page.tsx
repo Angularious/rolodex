@@ -27,11 +27,7 @@ import { CIRCUIT_COLOR } from '@/components/circuit/geometry';
 // Circuit-schematic drill-down view — client-only (SVG-heavy, no SSR needed).
 const CircuitGraph = dynamic(() => import('@/components/circuit/CircuitGraph'), {
   ssr: false,
-  loading: () => (
-    <div className="h-full w-full grid place-items-center bg-black font-mono text-xs text-[#5b6b82]">
-      initializing schematic…
-    </div>
-  ),
+  loading: () => <div className="h-full w-full" />,
 });
 import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
@@ -328,7 +324,7 @@ export default function Home() {
 
   const showReport = (status === 'searching' || status === 'ready') && report;
   // Full-bleed canvas for graph + loading screen. Summary gets its own full-width but scrollable layout.
-  const graphFull = !!showReport && (view === 'graph' || !done);
+  const graphFull = !!showReport && done && view === 'graph';
   const summaryFull = !!showReport && done && view === 'summary';
 
   return (
@@ -340,6 +336,10 @@ export default function Home() {
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(130%_90%_at_50%_56%,transparent_0%,rgba(10,10,11,0.46)_60%,rgba(10,10,11,0.84)_100%)]"
       />
+
+      {showReport && report && !done && (
+        <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
+      )}
 
       <div className="min-h-screen flex flex-col">
         {/* Header — always translucent glass so the animated dot field shows through.
@@ -453,14 +453,11 @@ export default function Home() {
           {/* Error */}
           {status === 'error' && error && <ErrorScreen error={error} onReset={reset} />}
 
-          {/* Report — loading screen, then full-bleed graph, summary, or table view */}
+          {/* Report — graph, summary, or table view */}
           {showReport &&
             report &&
-            (!done ? (
-              <div className="flex-1 relative">
-                <LoadingScreen steps={buildTrace(report, false)} domain={report.domain} />
-              </div>
-            ) : view === 'graph' ? (
+            done &&
+            (view === 'graph' ? (
               <div className="relative flex-1 min-h-[calc(100dvh-56px)] bg-transparent">
                 <CircuitGraph
                   data={{
