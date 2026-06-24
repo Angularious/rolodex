@@ -8,7 +8,10 @@ import type { FundingRound } from './types';
 const API = 'fundable';
 // Only fetch the single most recent round — all the UI needs is "last raise +
 // when". Cost: $0.066 × 1 = $0.066. Raise to 3-4 if a full history is wanted.
-const PAGE_SIZE = 1;
+// Fetch enough rounds that a newest-first sort can find one with an amount,
+// even when Fundable returns deals oldest-first (page 0). 4 rounds covers
+// most multi-stage companies while keeping cost at $0.264 (vs $0.462 at 7).
+const PAGE_SIZE = 4;
 
 // Drop acquisition/IPO/merger events — they inflate the total and are not
 // financing rounds.
