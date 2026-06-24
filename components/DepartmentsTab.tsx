@@ -120,9 +120,11 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 export function Unavailable() {
   return (
     <div className="retro-panel-flat p-6 text-center text-slate">
-      <div className="text-3xl mb-1">📭</div>
-      <div className="font-display text-lg">Data unavailable</div>
-      <div className="text-sm">This section wasn&apos;t available for this company.</div>
+      <div className="font-display text-lg">No workforce data</div>
+      <div className="text-sm mt-1">
+        Early-stage or stealth companies are often not yet indexed.
+        Check the Signals tab for what&apos;s available from their web presence.
+      </div>
     </div>
   );
 }

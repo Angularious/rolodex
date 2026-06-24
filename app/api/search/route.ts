@@ -24,7 +24,7 @@ import {
 import { fundingRounds as fundableFunding, mapFundableFunding, FUNDABLE_COST } from '@/lib/fundable';
 import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeAllEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
 import { searchPeople as coSearch, mapContactOutPeople } from '@/lib/contactout';
-import { search as seltzSearch, mapSignals, mapJobs, mapNarrative, SELTZ_COST } from '@/lib/seltz';
+import { search as seltzSearch, mapSignals, mapJobs, mapNarrative, extractCompanyDomain, SELTZ_COST } from '@/lib/seltz';
 import type { RawSeltzResponse } from '@/lib/seltz';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
@@ -155,16 +155,30 @@ export async function POST(req: NextRequest) {
       initialSpent += PRICE.enrich;
       const resolvedDomain = raw?.domain;
       if (!resolvedDomain) {
-        // Release the unused part of the reservation before bailing.
-        await reconcileSpend(initialSpent - ESTIMATE_USD, idHash);
-        return errorResponse(
-          { error: 'not_found', message: `Couldn't resolve "${norm.name}" to a company.` },
-          404,
-        );
+        // CE doesn't know this company — try Seltz as a fallback name resolver.
+        // Extracts the company's own domain from web search results ($0.006).
+        let seltzDomain: string | null = null;
+        try {
+          const seltzRaw = await seltzSearch(`"${norm.name}" startup company`, 5);
+          initialSpent += PRICE.seltz;
+          seltzDomain = extractCompanyDomain([seltzRaw]);
+        } catch { /* fall through to 404 */ }
+
+        if (!seltzDomain) {
+          await reconcileSpend(initialSpent - ESTIMATE_USD, idHash);
+          return errorResponse(
+            { error: 'not_found', message: `Couldn't resolve "${norm.name}" to a company.` },
+            404,
+          );
+        }
+        domain = seltzDomain;
+        resolvedFrom = norm.name;
+        // No preResolvedCompany — CE profile fetch happens in the stream below.
+      } else {
+        domain = resolvedDomain.toLowerCase();
+        resolvedFrom = norm.name;
+        preResolvedCompany = mapCompany(raw, domain);
       }
-      domain = resolvedDomain.toLowerCase();
-      resolvedFrom = norm.name;
-      preResolvedCompany = mapCompany(raw, domain);
     } catch (err) {
       await reconcileSpend(initialSpent - ESTIMATE_USD, idHash);
       // Key hit its limit while resolving → show capacity, not a generic error.
@@ -334,30 +348,64 @@ export async function POST(req: NextRequest) {
             // Non-critical: missing format just means no pattern emails in UI.
           }),
         // --- Seltz web search jobs (all three fire in parallel with other sections) ---
-        // Company name for queries: use resolved name, fall back to domain root.
+        // Queries are domain-anchored to prevent name collisions (e.g. "Acme" matching
+        // unrelated companies). For early-stage companies with no known funding/size,
+        // queries focus on their own web presence instead of press coverage.
         (async () => {
           const co = preResolvedCompany?.name ?? domain.split('.')[0];
-          const queries = [
-            `"${co}" funding investment announcement`,
-            `"${co}" product launch new feature`,
-            `"${co}" customer case study partnership`,
-          ];
-          const results = await Promise.allSettled(queries.map((q) => seltzSearch(q, 5)));
+
+          // Early-stage: known company with no funding and very small headcount.
+          // Only triggered on name-input searches where preResolvedCompany is available.
+          const earlyStage =
+            !!preResolvedCompany &&
+            !preResolvedCompany.fundingTotal &&
+            !preResolvedCompany.fundingRounds?.some((r) => r.amount) &&
+            (!preResolvedCompany.size ||
+              ['1-', '11-', '51-'].some((p) => preResolvedCompany!.size!.startsWith(p)));
+
+          const signalQueries = earlyStage
+            ? [
+                `site:${domain}`,
+                `"${co}" OR "${domain}" founders about company`,
+                `"${co}" OR "${domain}" launch product startup`,
+              ]
+            : [
+                `"${co}" OR "${domain}" funding investment announcement`,
+                `"${co}" OR "${domain}" product launch new feature`,
+                `"${co}" OR "${domain}" customer case study`,
+              ];
+
+          const results = await Promise.allSettled(signalQueries.map((q) => seltzSearch(q, 5)));
           const raws: RawSeltzResponse[] = [];
           for (const r of results) {
             if (r.status === 'fulfilled') { spentUsd += PRICE.seltz; raws.push(r.value); }
             else noteQuota(r.reason);
           }
-          const signals = mapSignals(raws, ['funding', 'product', 'customer']);
+          const signals = mapSignals(raws, earlyStage
+            ? ['general', 'general', 'product']
+            : ['funding', 'product', 'customer']);
           write({ type: 'signals', data: signals.length ? signals : null });
         })(),
         (async () => {
           const co = preResolvedCompany?.name ?? domain.split('.')[0];
-          const queries = [
-            `"${co}" software engineer product manager hiring`,
-            `"${co}" sales marketing growth hiring careers`,
-          ];
-          const results = await Promise.allSettled(queries.map((q) => seltzSearch(q, 10)));
+          const earlyStage =
+            !!preResolvedCompany &&
+            !preResolvedCompany.fundingTotal &&
+            !preResolvedCompany.fundingRounds?.some((r) => r.amount) &&
+            (!preResolvedCompany.size ||
+              ['1-', '11-', '51-'].some((p) => preResolvedCompany!.size!.startsWith(p)));
+
+          const jobQueries = earlyStage
+            ? [
+                `site:${domain} careers jobs`,
+                `"${co}" OR "${domain}" hiring angellist greenhouse lever`,
+              ]
+            : [
+                `"${co}" OR "${domain}" software engineer product manager hiring`,
+                `"${co}" OR "${domain}" sales marketing growth hiring`,
+              ];
+
+          const results = await Promise.allSettled(jobQueries.map((q) => seltzSearch(q, 10)));
           const raws: RawSeltzResponse[] = results
             .filter((r): r is PromiseFulfilledResult<RawSeltzResponse> => r.status === 'fulfilled')
             .map((r) => r.value);

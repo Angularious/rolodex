@@ -82,8 +82,11 @@ function SignalsSkeleton() {
 function Unavailable() {
   return (
     <div className="retro-panel-flat p-6 text-center text-slate">
-      <div className="font-display text-lg">No recent signals found</div>
-      <div className="text-sm">No news, launches, or customer mentions surfaced for this company.</div>
+      <div className="font-display text-lg">No signals found</div>
+      <div className="text-sm mt-1">
+        This company may be early-stage or not yet covered by public sources.
+        Try searching their domain directly for better results.
+      </div>
     </div>
   );
 }
