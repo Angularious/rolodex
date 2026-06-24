@@ -82,7 +82,7 @@ export default function SummaryView({
 }) {
   const toast = useToast();
   const [tab, setTab] = useState<SummaryTab>('employees');
-  const [fundingOpen, setFundingOpen] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
 
   const company = data.company;
@@ -149,7 +149,19 @@ export default function SummaryView({
                 {company.domain}
               </a>
               {company.description && (
-                <p style={{ fontSize: 12, color: '#8aa0bd', marginTop: 6, lineHeight: 1.5 }} className="line-clamp-3">{company.description}</p>
+                <div style={{ marginTop: 6 }}>
+                  <p style={{ fontSize: 12, color: '#8aa0bd', lineHeight: 1.5 }} className={descExpanded ? '' : 'line-clamp-3'}>
+                    {company.description}
+                  </p>
+                  {company.description.length > 165 && (
+                    <button
+                      onClick={() => setDescExpanded(v => !v)}
+                      style={{ marginTop: 4, fontSize: 10, color: '#4a7fa5', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: FONT, letterSpacing: '0.08em' }}
+                    >
+                      {descExpanded ? '↑ show less' : '↓ show more'}
+                    </button>
+                  )}
+                </div>
               )}
               {company.industries.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
@@ -185,50 +197,20 @@ export default function SummaryView({
         </div>
       ) : null}
 
-      {/* ── Funding accordion ── */}
-      {company && (company.fundingRounds?.length ?? 0) > 0 && (
-        <div style={{ margin: '6px 14px' }}>
-          <button
-            onClick={() => setFundingOpen(o => !o)}
-            style={{
-              width: '100%',
-              position: 'relative',
-              background: 'rgba(8,11,20,0.68)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              border: `1px solid ${CIRCUIT_COLOR.funding}30`,
-              padding: '9px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              cursor: 'pointer',
-              color: CIRCUIT_COLOR.funding,
-              fontSize: 11,
-              letterSpacing: '0.18em',
-              textAlign: 'left',
-              fontFamily: FONT,
-            }}
-          >
+      {/* ── Last raise — single most-recent round, no accordion ── */}
+      {company && (company.fundingRounds?.length ?? 0) > 0 && (() => {
+        const r = company.fundingRounds![0];
+        return (
+          <div style={{ position: 'relative', margin: '6px 14px', background: 'rgba(8,11,20,0.68)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: `1px solid ${CIRCUIT_COLOR.funding}30`, padding: '9px 12px', display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 11 }}>
             <BracketCorners color={CIRCUIT_COLOR.funding} size={9} />
-            <span>FUNDING ROUNDS · {company.fundingRounds!.length}</span>
-            <span style={{ transition: 'transform 0.3s', display: 'inline-block', transform: fundingOpen ? 'rotate(180deg)' : 'none', fontSize: 13, lineHeight: 1 }}>▼</span>
-          </button>
-          {fundingOpen && (
-            <div style={{ border: `1px solid ${CIRCUIT_COLOR.funding}30`, borderTop: 0, background: 'rgba(5,8,16,0.60)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', padding: '0 12px' }}>
-              {company.fundingRounds!.map((r, i) => (
-                <div
-                  key={i}
-                  style={{ borderBottom: i < company.fundingRounds!.length - 1 ? '1px solid #0e1626' : 'none', padding: '8px 0', display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'baseline', gap: 8, fontSize: 11 }}
-                >
-                  <span style={{ color: '#cfdcea', fontWeight: 600 }}>{r.type || 'Round'}</span>
-                  <span style={{ color: CIRCUIT_COLOR.funding, textAlign: 'center' }}>{r.amount || '—'}</span>
-                  <span style={{ color: '#5b6b82', fontSize: 10, textAlign: 'right' }}>{r.date?.slice(0, 7) || ''}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+            <span style={{ color: '#5b6b82', letterSpacing: '0.16em', fontSize: 10, flexShrink: 0 }}>LAST RAISE</span>
+            <span style={{ color: CIRCUIT_COLOR.funding, fontWeight: 600, flexShrink: 0 }}>{r.amount || r.type || 'Round'}</span>
+            <span style={{ color: '#5b6b82', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {[r.amount ? r.type : null, r.date?.slice(0, 7)].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* ── Tab row (horizontally scrollable) ── */}
       <div className="no-scrollbar" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'], padding: '10px 14px 0', display: 'flex', gap: 4 }}>
