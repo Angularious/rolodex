@@ -135,15 +135,13 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>('employees');
   const [forcedDept, setForcedDept] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const [view, setView] = useState<'graph' | 'summary' | 'table'>('graph');
+  const [view, setView] = useState<'graph' | 'summary' | 'table'>('summary');
 
-  // Persist view choice; default to summary on mobile, graph on desktop.
+  // Persist view choice; default to summary on all devices.
   useEffect(() => {
     const saved = localStorage.getItem('rolodex:view') as 'graph' | 'summary' | 'table' | null;
     if (saved === 'graph' || saved === 'summary' || saved === 'table') {
       setView(saved);
-    } else if (window.innerWidth < 768) {
-      setView('summary');
     }
   }, []);
 

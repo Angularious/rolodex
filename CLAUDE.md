@@ -5,7 +5,7 @@ report (profile + funding + tech stack, department headcount, employees,
 competitors). Data from **Company Enrich** (firmographics, funding, tech,
 workforce, people) + **ContactOut** (employee discovery + on-demand email/phone
 reveal) + **Tomba** (competitors + employee emails + email-format patterns) +
-**Aviato** (funding-round fallback), all via the Orthogonal API. Retro
+**Fundable** (funding-round fallback), all via the Orthogonal API. Retro
 Cartoon-Network aesthetic. "Powered by orthogonal.com" demo — not
 Orthogonal-owned branding.
 
@@ -56,12 +56,10 @@ the user's keys; it's already gitignore'd so it never gets committed.
   The company-profile job falls back to `GET /companies?id=` (id from the workforce
   response) if `GET /companies/enrich?domain=` fails. **Funding fallback:** if the
   resolved profile has no round-level funding detail, the company job pulls
-  structured rounds from **Aviato** (`/company/funding-rounds`, flat $0.08) and
-  merges them in before emitting `company`. **Thin = no rounds OR rounds present
+  structured rounds from **Fundable** (`/company/deals`, $0.066 × 7 rounds = $0.462)
+  and merges them in before emitting `company`. **Thin = no rounds OR rounds present
   but none carry a dollar amount** (CE often returns round types/dates/investors
-  with `amount: null`). Aviato rounds are sanity-filtered in `lib/aviato.ts` (drop
-  rows raising more than the company's max known valuation + acquisition/IPO-shaped
-  rows).
+  with `amount: null`). Fundable is domain-addressed directly; mapper in `lib/fundable.ts`.
   **Employee discovery (3-source, all fire in parallel):**
   1. **CE `/people/search`** (`lib/companyenrich.ts`) — LinkedIn-verified profiles with
      `ceId` for cheap email reveals ($0.0245/person, billed on REQUESTED page size not
@@ -103,8 +101,8 @@ the user's keys; it's already gitignore'd so it never gets committed.
   ContactOut rows with `hasContactOutEmail: true` show "work email on file → Reveal"
   before the Enrich button. **UI never names providers** — badge labels are
   capability-based.
-- **Graph View** (`components/circuit/`) is the **default**, **full-screen** results view
-  (Table View = the tabs, toggled). It's a **circuit-schematic drill-down map** —
+- **Graph View** (`components/circuit/`) is an optional **full-screen** results view
+  (Summary View = the default; toggled via floating button). It's a **circuit-schematic drill-down map** —
   hand-laid-out **orthogonal SVG line-art**, NOT a force sim. **No Three.js / WebGL /
   d3-force / react-force-graph** (those were removed — the old `components/graph/`
   `GraphHUD.tsx`/`SpaceGraph.tsx` are deleted; the deps linger in `package.json` but
@@ -159,12 +157,14 @@ Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
 
-Cost: ≈ **$0.43/search** (profile $0.012 + workforce $0.061 + CE people×8 $0.196 +
+Cost: ≈ **$0.36/search** (profile $0.012 + workforce $0.061 + CE people×8 $0.196 +
 ContactOut search $0.05 + Tomba domain-search $0.01 + competitors $0.01 +
-email-format $0.01 + Aviato funding fallback $0.08 when CE rounds are thin).
-**Capacity under a hard $20 cap: ~46 searches/day** (worst-case reservation ~$0.43
-→ ~46). To raise capacity: lower `EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or
-raise `DAILY_SPEND_CAP_USD`.
+email-format $0.01). Fundable funding fallback adds **$0.462** on top for companies
+with thin CE funding data; this is NOT included in the upfront reservation (it fires
+on a minority of searches) — `reconcileSpend` handles the delta post-search.
+**Capacity under a hard $20 cap: ~55 searches/day** (ESTIMATE_USD ≈ $0.36 → ~55).
+Worst-case single search (Fundable fires): ~$0.82. To raise capacity: lower
+`EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or raise `DAILY_SPEND_CAP_USD`.
 
 **The ledger charges the REQUESTED CE page size, not the returned count** — CE bills
 on requested page size, so charging the returned count let the hard cap pass
@@ -178,7 +178,7 @@ Reveals are billed on demand on top:
   ContactOut `/v1/linkedin/enrich` = **$0.55**.
 
 ## Orthogonal / provider specifics
-- Proxy pattern (server-only): `POST https://api.orthogonal.com/v1/run`,
+- Proxy pattern (server-only): `POST https://api.orth.sh/v1/run`,
   `Authorization: Bearer $ORTHOGONAL_API_KEY`, body `{api, path, query|body}`,
   response `{success, data}`. See `lib/orthogonal.ts`.
 - **GOTCHA: `/v1/run` validates GET query values as STRINGS.** A numeric value is
@@ -210,7 +210,7 @@ Reveals are billed on demand on top:
   prices vary by provider). Don't revert to a flat per-call multiplier.
 - Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
   `lib/contactout.ts` (people search discovery + reveal), `lib/tomba.ts` (similar +
-  domain-search employee augment + email-format), `lib/aviato.ts` (funding-rounds
+  domain-search employee augment + email-format), `lib/fundable.ts` (funding-rounds
   fallback, with sanity filter), `lib/format.ts` (`countryCode()` for CO full country
   name → ISO-2).
 - Data quality notes (from live testing 2026-06-23):

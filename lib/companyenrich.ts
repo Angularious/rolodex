@@ -3,6 +3,7 @@
 // null/absent, so we coalesce hard.
 
 import { callOrthogonal } from './orthogonal';
+import { fmtMoney } from './format';
 import type {
   Company,
   DeptCount,
@@ -163,13 +164,6 @@ export async function resolveWorkEmail(id: string, domain?: string): Promise<str
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function fmtMoney(n: number | null | undefined): string | null {
-  if (n == null || !Number.isFinite(n) || n <= 0) return null;
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(n % 1e9 === 0 ? 0 : 1)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1)}M`;
-  if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
-  return `$${n}`;
-}
 
 function parseAmount(s: string | null | undefined): number | null {
   if (!s) return null;

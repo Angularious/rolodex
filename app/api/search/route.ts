@@ -21,7 +21,7 @@ import {
   mapWorkforce,
   mapPeople,
 } from '@/lib/companyenrich';
-import { fundingRounds as aviatoFunding, mapAviatoFunding } from '@/lib/aviato';
+import { fundingRounds as fundableFunding, mapFundableFunding, FUNDABLE_COST } from '@/lib/fundable';
 import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeAllEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
 import { searchPeople as coSearch, mapContactOutPeople } from '@/lib/contactout';
 import { logSearch } from '@/lib/analytics';
@@ -55,7 +55,7 @@ const PRICE = {
   workforce: 0.06125, // company-enrich /companies/workforce
   perPerson: 0.0245, // company-enrich /people/search (per result)
   competitors: 0.01, // tomba /v1/similar
-  aviatoFunding: 0.08, // aviato /company/funding-rounds (funding fallback, flat)
+  fundableFunding: FUNDABLE_COST, // fundable /company/deals (funding fallback, 7 rounds)
   tombaEmployees: 0.01, // tomba /v1/domain-search (always fires, flat)
   emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
   contactoutSearch: 0.05, // contactout /v1/people/search (discovery, flat 25 profiles)
@@ -63,12 +63,14 @@ const PRICE = {
 
 // Worst-case cost of one search, reserved against the hard cap up front and
 // reconciled to the real amount after. Includes a possible profile-fallback call.
+// Fundable fallback fires only for companies with thin CE funding data (a
+// minority of searches), so it is excluded from the upfront reservation.
+// reconcileSpend handles the delta on the searches where it does fire.
 const ESTIMATE_USD =
   PRICE.enrich * 2 +
   PRICE.workforce +
   PRICE.perPerson * PAGE_SIZE +
   PRICE.competitors +
-  PRICE.aviatoFunding + // funding fallback may fire when CE has no round detail
   PRICE.tombaEmployees + // employee-list augment (flat, always fires)
   PRICE.emailFormat + // domain email pattern (flat, always fires)
   PRICE.contactoutSearch; // employee discovery (flat, always fires)
@@ -194,7 +196,7 @@ export async function POST(req: NextRequest) {
       const wfPromise = workforce(domain);
 
       // Funding fallback: when Company Enrich returns no round-level detail, pull
-      // structured rounds from Aviato ($0.08) and merge them into the profile.
+      // structured rounds from Fundable ($0.462) and merge them into the profile.
       // Fires only on thin funding, so most searches stay at the base cost.
       const augmentFunding = async (company: Company): Promise<Company> => {
         // Fire only when CE funding is thin: no rounds at all, OR rounds present
@@ -203,9 +205,12 @@ export async function POST(req: NextRequest) {
         const ceRounds = company.fundingRounds ?? [];
         if (ceRounds.length && ceRounds.some((r) => r.amount)) return company;
         try {
-          const f = mapAviatoFunding(await aviatoFunding(domain));
+          const raw = await fundableFunding(domain);
+          // Charge on any successful API call — Fundable bills per request,
+          // not per returned deal.
+          spentUsd += PRICE.fundableFunding;
+          const f = mapFundableFunding(raw);
           if (f && f.fundingRounds.length) {
-            spentUsd += PRICE.aviatoFunding;
             return {
               ...company,
               fundingTotal: company.fundingTotal ?? f.fundingTotal,

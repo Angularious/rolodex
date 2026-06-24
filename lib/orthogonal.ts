@@ -1,8 +1,8 @@
 // Thin client for the Orthogonal REST API (server-side only).
-// Every Tomba call is proxied through https://api.orthogonal.com/v1/run so the
+// All provider calls are proxied through https://api.orth.sh/v1/run so the
 // Orthogonal key never reaches the browser.
 
-const ORTHOGONAL_URL = 'https://api.orthogonal.com/v1/run';
+const ORTHOGONAL_URL = 'https://api.orth.sh/v1/run';
 // Kept under Vercel's serverless function ceiling so a slow upstream call is
 // aborted by us (clean per-section error) rather than killed by the platform.
 const TIMEOUT_MS = 9000;
