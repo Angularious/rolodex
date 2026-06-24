@@ -17,7 +17,8 @@ export interface FundingRound {
   amount: string | null; // human label, e.g. "$415.7M" or null
   type: string | null; // e.g. "Series F"
   investors: string | null; // comma-joined investor names or null
-  valuation?: string | null; // human label, e.g. "$35B" (Aviato-sourced rounds only)
+  valuation?: string | null; // human label, e.g. "$35B"
+  description?: string | null; // short narrative from Fundable deal_descriptions
 }
 
 export interface Company {

@@ -559,6 +559,8 @@ export default function Home() {
                     employees: report.employees,
                     employeesTotal: report.employeesTotal,
                     employeesLoading: report.employeesLoading,
+                    signals: report.signals,
+                    signalsLoading: report.signalsLoading,
                   }}
                   onReveal={revealContact}
                   onSearchCompany={(d) => requestSearch(d)}

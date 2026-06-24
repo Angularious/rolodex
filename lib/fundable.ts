@@ -120,6 +120,7 @@ export function mapFundableFunding(
     type: ROUND_LABEL[d.round_type ?? ''] ?? (d.round_type || null),
     investors: extractInvestors(d.deal_descriptions?.short_description),
     valuation: fmtMoney(d.valuation?.valuation_usd),
+    description: d.deal_descriptions?.short_description ?? null,
   }));
 
   const total = deals.reduce((s, d) => s + (d.total_round_raised ?? 0), 0);

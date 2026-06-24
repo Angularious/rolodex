@@ -5,7 +5,7 @@
 // but laid out as stacked panels for small screens.
 
 import { useState, useCallback } from 'react';
-import type { Company, Competitor, Workforce, Employee } from '@/lib/types';
+import type { Company, Competitor, Workforce, Employee, Signal } from '@/lib/types';
 import type { RevealFn } from '@/components/EmployeesTab';
 import { CIRCUIT_COLOR } from '@/components/circuit/geometry';
 import { Avatar } from '@/components/DecisionMakersTab';
@@ -24,6 +24,8 @@ export interface SummaryData {
   employees: Employee[];
   employeesTotal: number;
   employeesLoading: boolean;
+  signals: Signal[] | null;
+  signalsLoading: boolean;
 }
 
 interface RevealState {
@@ -33,7 +35,7 @@ interface RevealState {
   phone: string | null;
 }
 
-type SummaryTab = 'employees' | 'departments' | 'competitors' | 'tech';
+type SummaryTab = 'employees' | 'departments' | 'competitors' | 'tech' | 'signals';
 
 // ---------------------------------------------------------------------------
 // Bracket corner ornaments (CSS-based, 4 corners)
@@ -83,6 +85,7 @@ export default function SummaryView({
   const toast = useToast();
   const [tab, setTab] = useState<SummaryTab>('employees');
   const [descExpanded, setDescExpanded] = useState(false);
+  const [roundOpen, setRoundOpen] = useState(false);
   const [revealMap, setRevealMap] = useState<Record<string, RevealState>>({});
 
   const company = data.company;
@@ -96,6 +99,7 @@ export default function SummaryView({
     { id: 'departments', label: 'Departments', count: data.workforce?.departments.length ?? null, color: CIRCUIT_COLOR.departments, loading: data.workforceLoading },
     { id: 'competitors', label: 'Competitors', count: data.competitors?.length ?? null, color: CIRCUIT_COLOR.competitors, loading: data.competitorsLoading },
     { id: 'tech', label: 'Tech Stack', count: company?.tech.length ?? null, color: CIRCUIT_COLOR.tech, loading: false },
+    { id: 'signals', label: 'News', count: data.signals?.length ?? null, color: '#fb923c', loading: data.signalsLoading },
   ];
 
   const activeColor = tabDefs.find(t => t.id === tab)?.color ?? CIRCUIT_COLOR.employees;
@@ -197,17 +201,45 @@ export default function SummaryView({
         </div>
       ) : null}
 
-      {/* ── Last raise — single most-recent round, no accordion ── */}
+      {/* ── Last raise — expandable detail panel ── */}
       {company && (company.fundingRounds?.length ?? 0) > 0 && (() => {
         const r = company.fundingRounds![0];
+        const hasDetail = !!(r.valuation || r.investors || r.description);
         return (
-          <div style={{ position: 'relative', margin: '6px 14px', background: 'rgba(8,11,20,0.68)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: `1px solid ${CIRCUIT_COLOR.funding}30`, padding: '9px 12px', display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 11 }}>
-            <BracketCorners color={CIRCUIT_COLOR.funding} size={9} />
-            <span style={{ color: '#5b6b82', letterSpacing: '0.16em', fontSize: 10, flexShrink: 0 }}>LAST RAISE</span>
-            <span style={{ color: CIRCUIT_COLOR.funding, fontWeight: 600, flexShrink: 0 }}>{r.amount || r.type || 'Round'}</span>
-            <span style={{ color: '#5b6b82', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {[r.amount ? r.type : null, r.date?.slice(0, 7)].filter(Boolean).join(' · ')}
-            </span>
+          <div style={{ margin: '6px 14px' }}>
+            <button
+              onClick={() => hasDetail && setRoundOpen(o => !o)}
+              style={{ width: '100%', position: 'relative', background: 'rgba(8,11,20,0.68)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: `1px solid ${CIRCUIT_COLOR.funding}30`, padding: '9px 12px', display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 11, cursor: hasDetail ? 'pointer' : 'default', fontFamily: FONT, textAlign: 'left' }}
+            >
+              <BracketCorners color={CIRCUIT_COLOR.funding} size={9} />
+              <span style={{ color: '#5b6b82', letterSpacing: '0.16em', fontSize: 10, flexShrink: 0 }}>LAST RAISE</span>
+              <span style={{ color: CIRCUIT_COLOR.funding, fontWeight: 600, flexShrink: 0 }}>{r.amount || r.type || 'Round'}</span>
+              <span style={{ color: '#5b6b82', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                {[r.amount ? r.type : null, r.date?.slice(0, 7)].filter(Boolean).join(' · ')}
+              </span>
+              {hasDetail && (
+                <span style={{ color: CIRCUIT_COLOR.funding, fontSize: 10, flexShrink: 0, transition: 'transform 0.2s', display: 'inline-block', transform: roundOpen ? 'rotate(180deg)' : 'none' }}>▼</span>
+              )}
+            </button>
+            {roundOpen && hasDetail && (
+              <div style={{ border: `1px solid ${CIRCUIT_COLOR.funding}30`, borderTop: 0, background: 'rgba(5,8,16,0.72)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {r.valuation && (
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11 }}>
+                    <span style={{ color: '#5b6b82', letterSpacing: '0.12em', fontSize: 10, minWidth: 80 }}>VALUATION</span>
+                    <span style={{ color: '#cfdcea', fontWeight: 600 }}>{r.valuation}</span>
+                  </div>
+                )}
+                {r.investors && (
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11, alignItems: 'flex-start' }}>
+                    <span style={{ color: '#5b6b82', letterSpacing: '0.12em', fontSize: 10, minWidth: 80, flexShrink: 0 }}>INVESTORS</span>
+                    <span style={{ color: '#cfdcea' }}>{r.investors}</span>
+                  </div>
+                )}
+                {r.description && (
+                  <p style={{ color: '#8aa0bd', fontSize: 11, lineHeight: 1.5, margin: 0, borderTop: '1px solid #0e1626', paddingTop: 8 }}>{r.description}</p>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -269,6 +301,9 @@ export default function SummaryView({
         )}
         {tab === 'tech' && (
           <TechPane tech={company?.tech ?? []} loading={companyLoading} />
+        )}
+        {tab === 'signals' && (
+          <SignalsPane signals={data.signals} loading={data.signalsLoading} />
         )}
       </div>
     </div>
@@ -543,6 +578,56 @@ function TechPane({ tech, loading }: { tech: string[]; loading: boolean }) {
           <span style={{ color: CIRCUIT_COLOR.tech, fontSize: 11, letterSpacing: '0.08em' }}>{t}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// News / signals pane
+// ---------------------------------------------------------------------------
+const SIGNAL_COLOR: Record<string, string> = {
+  funding: '#fb923c',
+  product: '#34d399',
+  customer: '#22d3ee',
+  general: '#8aa0bd',
+};
+
+function SignalsPane({ signals, loading }: { signals: Signal[] | null; loading: boolean }) {
+  if (loading && !signals) return <PaneLoadingSkeleton rows={4} />;
+  if (!signals || signals.length === 0) return <EmptyPane label="No recent news found" />;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {signals.map((s, i) => {
+        const color = SIGNAL_COLOR[s.category] ?? SIGNAL_COLOR.general;
+        return (
+          <a
+            key={i}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'block', background: 'rgba(8,11,20,0.70)', border: `1px solid ${color}22`, padding: '10px 12px', textDecoration: 'none', position: 'relative' }}
+          >
+            <BracketCorners color={color} size={7} sw={1} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+              <span style={{ fontSize: 9, letterSpacing: '0.16em', color, border: `1px solid ${color}40`, padding: '1px 5px', flexShrink: 0 }}>
+                {s.category.toUpperCase()}
+              </span>
+              {s.source && (
+                <span style={{ fontSize: 9, color: '#5b6b82', letterSpacing: '0.08em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {s.source}
+                </span>
+              )}
+            </div>
+            {s.title && (
+              <div style={{ color: '#cfdcea', fontSize: 12, fontWeight: 600, lineHeight: 1.35, marginBottom: 3 }}>{s.title}</div>
+            )}
+            {s.snippet && (
+              <p style={{ color: '#8aa0bd', fontSize: 11, lineHeight: 1.45, margin: 0 }} className="line-clamp-3">{s.snippet}</p>
+            )}
+          </a>
+        );
+      })}
     </div>
   );
 }
