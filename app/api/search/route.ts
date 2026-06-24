@@ -36,12 +36,12 @@ export const dynamic = 'force-dynamic';
 // parallel calls (≤9s), so the worst case exceeds Vercel's default 10s limit.
 export const maxDuration = 30;
 
-// Default employee page size — the main cost knob ($0.0245/person). Company
-// Enrich bills on the REQUESTED page size, not the returned count, so this is
-// both the value knob and the cost knob. Env-tunable without a deploy.
+// Default CE employee page size. CE bills on REQUESTED size, not returned count.
+// Kept small (5) because CE's value is the ceId for cheap $0.12 reveals, not
+// breadth — ContactOut (2 pages × $0.05) covers the list far more cheaply.
 const PAGE_SIZE = (() => {
   const n = parseInt(process.env.EMPLOYEE_PAGE_SIZE ?? '', 10);
-  return Number.isFinite(n) && n > 0 && n <= 25 ? n : 8;
+  return Number.isFinite(n) && n > 0 && n <= 25 ? n : 5;
 })();
 
 // Max combined employees to show (CE + ContactOut + Tomba). All three sources
@@ -57,10 +57,10 @@ const PRICE = {
   workforce: 0.06125, // company-enrich /companies/workforce
   perPerson: 0.0245, // company-enrich /people/search (per result)
   competitors: 0.01, // tomba /v1/similar
-  fundableFunding: FUNDABLE_COST, // fundable /company/deals (funding fallback, 7 rounds)
+  fundableFunding: FUNDABLE_COST, // fundable /company/deals (funding fallback, 4 rounds)
   tombaEmployees: 0.01, // tomba /v1/domain-search (always fires, flat)
   emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
-  contactoutSearch: 0.05, // contactout /v1/people/search (discovery, flat 25 profiles)
+  contactoutSearch: 0.05, // contactout /v1/people/search (per page, 25 profiles; 2 pages fired)
   seltz: SELTZ_COST, // seltz /v1/search (per call, $0.00625)
 };
 
@@ -76,7 +76,7 @@ const ESTIMATE_USD =
   PRICE.competitors +
   PRICE.tombaEmployees + // employee-list augment (flat, always fires)
   PRICE.emailFormat + // domain email pattern (flat, always fires)
-  PRICE.contactoutSearch + // employee discovery (flat, always fires)
+  PRICE.contactoutSearch * 2 + // 2 CO pages × $0.05 (always fires)
   PRICE.seltz * 6; // seltz: 3 signals + 2 jobs + 1 narrative (always fires)
 
 function errorResponse(err: SearchError, status: number): Response {
@@ -288,9 +288,10 @@ export async function POST(req: NextRequest) {
           let company = preResolvedCompany?.name || domain.split('.')[0];
           if (company.length < 3) company = domain; // Tomba requires 3-75 chars
 
-          const [ceRaw, coRaw, tombaRaw] = await Promise.allSettled([
+          const [ceRaw, coRaw1, coRaw2, tombaRaw] = await Promise.allSettled([
             peopleSearch(domain, PAGE_SIZE),
-            coSearch(domain),
+            coSearch(domain, 1),
+            coSearch(domain, 2),
             domainSearch(domain, company, 50),
           ]);
 
@@ -306,13 +307,16 @@ export async function POST(req: NextRequest) {
             noteQuota(ceRaw.reason);
           }
 
-          // ContactOut: flat $0.05 for 25 profiles.
+          // ContactOut: flat $0.05 per page (25 profiles/page). Fire 2 pages in
+          // parallel for up to 50 profiles. Charge only for successful pages.
           let coEmployees: import('@/lib/types').Employee[] = [];
-          if (coRaw.status === 'fulfilled') {
-            spentUsd += PRICE.contactoutSearch;
-            coEmployees = mapContactOutPeople(coRaw.value);
-          } else {
-            noteQuota(coRaw.reason);
+          for (const coRaw of [coRaw1, coRaw2]) {
+            if (coRaw.status === 'fulfilled') {
+              spentUsd += PRICE.contactoutSearch;
+              coEmployees = coEmployees.concat(mapContactOutPeople(coRaw.value));
+            } else {
+              noteQuota(coRaw.reason);
+            }
           }
 
           // Tomba: flat $0.01 for up to 50 domain emails. Pass domain so the mapper

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Company } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 
@@ -44,9 +45,12 @@ export function CompanyCardSkeleton({ domain }: { domain: string }) {
 }
 
 export default function CompanyCard({ company }: { company: Company }) {
+  const [descExpanded, setDescExpanded] = useState(false);
   const indexed = timeAgo(company.lastUpdated);
   const socials = SOCIAL_META.filter((s) => company.socials[s.key]);
   const rounds = company.fundingRounds ?? [];
+  // ~55 chars/line × 3 lines; only show toggle when text would actually be clipped
+  const descIsLong = (company.description?.length ?? 0) > 165;
 
   return (
     <div className="retro-panel panel-accent p-5 my-4 pop-in">
@@ -65,7 +69,19 @@ export default function CompanyCard({ company }: { company: Company }) {
             {company.domain}
           </a>
           {company.description && (
-            <p className="mt-2 text-sm leading-relaxed">{company.description}</p>
+            <div className="mt-2">
+              <p className={`text-sm leading-relaxed${descIsLong && !descExpanded ? ' line-clamp-3' : ''}`}>
+                {company.description}
+              </p>
+              {descIsLong && (
+                <button
+                  onClick={() => setDescExpanded((v) => !v)}
+                  className="mt-1 text-xs font-mono text-accent-soft hover:text-accent transition-colors"
+                >
+                  {descExpanded ? '↑ show less' : '↓ show more'}
+                </button>
+              )}
+            </div>
           )}
 
           {company.industries.length > 0 && (

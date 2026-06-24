@@ -1,16 +1,17 @@
-// Fundable funding-rounds wrapper + mapper. Replaces Aviato as the waterfall
-// fallback for the company profile's funding section when Company Enrich returns
-// no round detail. Cost: $0.066 × PAGE_SIZE per call ($0.462 at default PAGE_SIZE=7).
+// Fundable funding-rounds wrapper + mapper. Fires as a waterfall fallback when
+// Company Enrich returns no round detail. Cost: $0.066 × PAGE_SIZE per call.
 
 import { callOrthogonal } from './orthogonal';
 import { fmtMoney } from './format';
 import type { FundingRound } from './types';
 
 const API = 'fundable';
-const PAGE_SIZE = 7; // most recent N rounds; cost = 0.066 × PAGE_SIZE
+// Only fetch the single most recent round — all the UI needs is "last raise +
+// when". Cost: $0.066 × 1 = $0.066. Raise to 3-4 if a full history is wanted.
+const PAGE_SIZE = 1;
 
 // Drop acquisition/IPO/merger events — they inflate the total and are not
-// financing rounds. Mirrors the NON_ROUND_RE guard Aviato used.
+// financing rounds.
 const NON_ROUND_RE = /acquisition|merger|ipo|spac|buyout|tender/i;
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,9 @@ interface RawFundableDeal {
   total_round_raised?: number | null;
   valuation?: {
     valuation_usd?: number | null;
+  } | null;
+  deal_descriptions?: {
+    short_description?: string | null;
   } | null;
 }
 
@@ -48,12 +52,55 @@ export const FUNDABLE_COST = 0.066 * PAGE_SIZE;
 // Mapper
 // ---------------------------------------------------------------------------
 const ROUND_LABEL: Record<string, string> = {
+  // Series rounds (common Fundable round_type values)
+  SEED: 'Seed',
+  PRE_SEED: 'Pre-Seed',
+  ANGEL: 'Angel',
+  SERIES_A: 'Series A',
+  SERIES_B: 'Series B',
+  SERIES_C: 'Series C',
+  SERIES_D: 'Series D',
+  SERIES_E: 'Series E',
+  SERIES_F: 'Series F',
+  SERIES_G: 'Series G',
+  // Generic financing types
   EQUITY: 'Equity Round',
   DEBT: 'Debt Financing',
   GRANT: 'Grant',
   CONVERTIBLE: 'Convertible Note',
   SECONDARY: 'Secondary',
+  GROWTH: 'Growth',
+  CORPORATE: 'Corporate Round',
+  VENTURE: 'Venture Round',
 };
+
+/**
+ * Extract investor names from Fundable's deal description text.
+ * Pattern: "… led by X with participation from Y, Z and W."
+ */
+function extractInvestors(desc: string | null | undefined): string | null {
+  if (!desc) return null;
+  const investors: string[] = [];
+
+  // "led by X" — up to "with participation", connector, period, or end
+  const ledBy = desc.match(/\bled\s+by\s+([^.,]+?)(?:\s+with\s+participation|\s+and\s+[\w]|\.|,|$)/i);
+  if (ledBy?.[1]) {
+    investors.push(...ledBy[1].split(/\s+and\s+/i).map((s) => s.trim()).filter(Boolean));
+  }
+
+  // "participation from (existing investors)? X, Y and Z"
+  const partFrom = desc.match(/participation\s+from\s+(?:existing\s+investors?\s+)?(.+?)(?:\.|$)/i);
+  if (partFrom?.[1]) {
+    const parts = partFrom[1]
+      .split(/,\s*|\s+and\s+/i)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 1);
+    investors.push(...parts);
+  }
+
+  if (!investors.length) return null;
+  return Array.from(new Set(investors)).join(', ');
+}
 
 export function mapFundableFunding(
   raw: RawFundableDeals,
@@ -68,7 +115,7 @@ export function mapFundableFunding(
     amount: fmtMoney(d.total_round_raised),
     // Use || null so empty-string round_type becomes null, not a blank label.
     type: ROUND_LABEL[d.round_type ?? ''] ?? (d.round_type || null),
-    investors: null, // Fundable returns investor IDs, not names
+    investors: extractInvestors(d.deal_descriptions?.short_description),
     valuation: fmtMoney(d.valuation?.valuation_usd),
   }));
 

@@ -57,7 +57,7 @@ the user's keys; it's already gitignore'd so it never gets committed.
   The company-profile job falls back to `GET /companies?id=` (id from the workforce
   response) if `GET /companies/enrich?domain=` fails. **Funding fallback:** if the
   resolved profile has no round-level funding detail, the company job pulls
-  structured rounds from **Fundable** (`/company/deals`, $0.066 × 7 rounds = $0.462)
+  the most recent round from **Fundable** (`/company/deals`, $0.066 × 1 round = $0.066)
   and merges them in before emitting `company`. **Thin = no rounds OR rounds present
   but none carry a dollar amount** (CE often returns round types/dates/investors
   with `amount: null`). Fundable is domain-addressed directly; mapper in `lib/fundable.ts`.
@@ -65,12 +65,13 @@ the user's keys; it's already gitignore'd so it never gets committed.
   1. **CE `/people/search`** (`lib/companyenrich.ts`) — LinkedIn-verified profiles with
      `ceId` for cheap email reveals ($0.0245/person, billed on REQUESTED page size not
      returned count). `source:'company-enrich'`.
-  2. **ContactOut `/v1/people/search`** (`lib/contactout.ts`) — flat $0.05 for 25
-     quality profiles with photos, LinkedIn, `hasContactOutEmail` flag. Domain-scoped
-     at the API level (confirmed: `plaid.co.jp` and `plaid.com` return distinct result
-     sets). `source:'contactout'`. Investor/board/advisor titles filtered via
-     `SKIP_CO_TITLE`. Empty-string seniority normalized to null. Single-char last names
-     ("Paul D") dropped — ContactOut uses these when the full name isn't indexed.
+  2. **ContactOut `/v1/people/search`** (`lib/contactout.ts`) — $0.05/page, 25
+     profiles/page. **Two pages fired in parallel** for up to 50 profiles ($0.10
+     total). Domain-scoped at the API level (confirmed: `plaid.co.jp` and `plaid.com`
+     return distinct result sets). `source:'contactout'`. Investor/board/advisor
+     titles filtered via `SKIP_CO_TITLE`. Empty-string seniority normalized to null.
+     Single-char last names ("Paul D") dropped — ContactOut uses these when the full
+     name isn't indexed.
   3. **Tomba `/v1/domain-search`** (`lib/tomba.ts`) — flat $0.01 for up to 50 domain
      emails (unverified pattern guesses). `source:'tomba'`, `emailUnverified:true`.
      **GOTCHA: domain filter is mandatory** — Tomba can return employees from a
@@ -158,14 +159,14 @@ Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
 
-Cost: ≈ **$0.40/search** (profile $0.012 + workforce $0.061 + CE people×8 $0.196 +
-ContactOut search $0.05 + Tomba domain-search $0.01 + competitors $0.01 +
-email-format $0.01 + Seltz ×6 $0.038). Fundable funding fallback adds **$0.462**
-on top for companies with thin CE funding data; this is NOT included in the upfront
-reservation (it fires on a minority of searches) — `reconcileSpend` handles the
-delta post-search.
-**Capacity under a hard $20 cap: ~50 searches/day** (ESTIMATE_USD ≈ $0.40 → ~50).
-Worst-case single search (Fundable fires): ~$0.86. To raise capacity: lower
+Cost: ≈ **$0.39/search** (profile $0.012 + workforce $0.061 + CE people×5 $0.1225 +
+ContactOut ×2 pages $0.10 + Tomba domain-search $0.01 + competitors $0.01 +
+email-format $0.01 + Seltz ×6 $0.038). Fundable funding fallback adds **$0.066**
+on top for companies with thin CE funding data (fetches only the most recent round —
+amount + date + type + investors). NOT included in the upfront reservation (fires on
+a minority of searches) — `reconcileSpend` handles the delta.
+**Capacity under a hard $20 cap: ~51 searches/day** (ESTIMATE_USD ≈ $0.39 → ~51).
+Worst-case single search (Fundable fires): ~$0.46. To raise capacity: lower
 `EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or raise `DAILY_SPEND_CAP_USD`.
 
 **The ledger charges the REQUESTED CE page size, not the returned count** — CE bills
