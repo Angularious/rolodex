@@ -269,7 +269,14 @@ export async function POST(req: NextRequest) {
           write({ type: 'company', data: null, error: 'unavailable' });
           return;
         }
-        write({ type: 'company', data: await augmentFunding(company) });
+        // Cap Fundable augment so a slow/failing Fundable can't delay the
+        // company card for up to 18s (two 9s timeouts). 6s is generous for a
+        // normal API call; if it loses the race we emit CE data immediately.
+        const augmented = await Promise.race([
+          augmentFunding(company),
+          new Promise<Company>((resolve) => setTimeout(() => resolve(company), 6000)),
+        ]);
+        write({ type: 'company', data: augmented });
       })();
 
       const jobs: Promise<unknown>[] = [

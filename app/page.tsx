@@ -304,6 +304,13 @@ export default function Home() {
           });
         });
         if (!fatal) {
+          // If the stream ended before the company message arrived (e.g. a
+          // network cut or Vercel timeout), settle it as an error so the UI
+          // shows "unavailable" instead of a loading skeleton forever.
+          setReport((prev) => {
+            if (!prev || prev.company || prev.companyError) return prev;
+            return { ...prev, companyError: true };
+          });
           setStatus('ready');
           setDone(true);
         }
