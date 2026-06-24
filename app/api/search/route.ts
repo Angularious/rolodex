@@ -24,6 +24,8 @@ import {
 import { fundingRounds as fundableFunding, mapFundableFunding, FUNDABLE_COST } from '@/lib/fundable';
 import { similar, mapCompetitors, domainSearch, mapTombaEmployees, mergeAllEmployees, emailFormat, mapEmailFormat } from '@/lib/tomba';
 import { searchPeople as coSearch, mapContactOutPeople } from '@/lib/contactout';
+import { search as seltzSearch, mapSignals, mapJobs, mapNarrative, SELTZ_COST } from '@/lib/seltz';
+import type { RawSeltzResponse } from '@/lib/seltz';
 import { logSearch } from '@/lib/analytics';
 import { isQuotaError } from '@/lib/orthogonal';
 import type { Company, StreamMessage, SearchError } from '@/lib/types';
@@ -59,6 +61,7 @@ const PRICE = {
   tombaEmployees: 0.01, // tomba /v1/domain-search (always fires, flat)
   emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
   contactoutSearch: 0.05, // contactout /v1/people/search (discovery, flat 25 profiles)
+  seltz: SELTZ_COST, // seltz /v1/search (per call, $0.00625)
 };
 
 // Worst-case cost of one search, reserved against the hard cap up front and
@@ -73,7 +76,8 @@ const ESTIMATE_USD =
   PRICE.competitors +
   PRICE.tombaEmployees + // employee-list augment (flat, always fires)
   PRICE.emailFormat + // domain email pattern (flat, always fires)
-  PRICE.contactoutSearch; // employee discovery (flat, always fires)
+  PRICE.contactoutSearch + // employee discovery (flat, always fires)
+  PRICE.seltz * 6; // seltz: 3 signals + 2 jobs + 1 narrative (always fires)
 
 function errorResponse(err: SearchError, status: number): Response {
   return new Response(JSON.stringify(err), {
@@ -329,6 +333,48 @@ export async function POST(req: NextRequest) {
           .catch(() => {
             // Non-critical: missing format just means no pattern emails in UI.
           }),
+        // --- Seltz web search jobs (all three fire in parallel with other sections) ---
+        // Company name for queries: use resolved name, fall back to domain root.
+        (async () => {
+          const co = preResolvedCompany?.name ?? domain.split('.')[0];
+          const queries = [
+            `"${co}" funding investment announcement`,
+            `"${co}" product launch new feature`,
+            `"${co}" customer case study partnership`,
+          ];
+          const results = await Promise.allSettled(queries.map((q) => seltzSearch(q, 5)));
+          const raws: RawSeltzResponse[] = [];
+          for (const r of results) {
+            if (r.status === 'fulfilled') { spentUsd += PRICE.seltz; raws.push(r.value); }
+            else noteQuota(r.reason);
+          }
+          const signals = mapSignals(raws, ['funding', 'product', 'customer']);
+          write({ type: 'signals', data: signals.length ? signals : null });
+        })(),
+        (async () => {
+          const co = preResolvedCompany?.name ?? domain.split('.')[0];
+          const queries = [
+            `"${co}" software engineer product manager hiring`,
+            `"${co}" sales marketing growth hiring careers`,
+          ];
+          const results = await Promise.allSettled(queries.map((q) => seltzSearch(q, 10)));
+          const raws: RawSeltzResponse[] = results
+            .filter((r): r is PromiseFulfilledResult<RawSeltzResponse> => r.status === 'fulfilled')
+            .map((r) => r.value);
+          for (const r of results) { if (r.status === 'fulfilled') spentUsd += PRICE.seltz; else noteQuota(r.reason); }
+          const jobPostings = mapJobs(raws);
+          write({ type: 'jobs', data: jobPostings.length ? jobPostings : null });
+        })(),
+        (async () => {
+          try {
+            const raw = await seltzSearch(`site:${domain} about company products`, 3);
+            spentUsd += PRICE.seltz;
+            const description = mapNarrative(raw);
+            if (description) write({ type: 'narrative', description });
+          } catch (err) {
+            noteQuota(err);
+          }
+        })(),
       ];
 
       await Promise.allSettled(jobs);

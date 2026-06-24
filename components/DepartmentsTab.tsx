@@ -1,6 +1,6 @@
 'use client';
 
-import type { Workforce } from '@/lib/types';
+import type { Workforce, JobSignal } from '@/lib/types';
 
 function Bar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
@@ -13,11 +13,13 @@ function Bar({ value, max }: { value: number; max: number }) {
 
 export default function DepartmentsTab({
   workforce,
+  jobs,
   onPickDepartment,
   error,
   onRetry,
 }: {
   workforce: Workforce | null;
+  jobs?: JobSignal[] | null;
   onPickDepartment: (dept: string) => void;
   error?: boolean;
   onRetry?: () => void;
@@ -72,6 +74,36 @@ export default function DepartmentsTab({
           </button>
         ))}
       </div>
+
+      {/* Hiring activity — shown only when job postings are available */}
+      {jobs && jobs.length > 0 && (
+        <div className="mt-6">
+          <h3 className="font-display text-xl mb-2">Hiring activity</h3>
+          <div className="space-y-2">
+            {jobs.map((j, i) => (
+              <a
+                key={i}
+                href={j.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block retro-panel-flat p-3 hover:bg-card-hover hover:border-accent transition-colors"
+              >
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                  {j.source && (
+                    <span className="font-mono text-[0.65rem] text-muted">{j.source}</span>
+                  )}
+                </div>
+                {j.title && (
+                  <div className="font-bold text-sm text-cream leading-snug mb-0.5">{j.title}</div>
+                )}
+                {j.snippet && (
+                  <div className="text-xs text-cream-dim leading-relaxed">{j.snippet}</div>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

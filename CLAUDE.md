@@ -51,7 +51,8 @@ the user's keys; it's already gitignore'd so it never gets committed.
   per-IP rate limit → global spend kill-switch → normalize → (name input only)
   `POST /companies/enrich {name}` resolves domain **and** returns the profile →
   fire calls in parallel, emit each section as it resolves (`meta`, `company`,
-  `workforce`, `employees`, `competitors`, `done`) → record spend → log analytics.
+  `workforce`, `employees`, `competitors`, `emailformat`, `signals`, `jobs`,
+  `narrative`, `done`) → record spend → log analytics.
   Per-section failures are isolated (emit `{data:null,error}`).
   The company-profile job falls back to `GET /companies?id=` (id from the workforce
   response) if `GET /companies/enrich?domain=` fails. **Funding fallback:** if the
@@ -157,13 +158,14 @@ Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
 
-Cost: ≈ **$0.36/search** (profile $0.012 + workforce $0.061 + CE people×8 $0.196 +
+Cost: ≈ **$0.40/search** (profile $0.012 + workforce $0.061 + CE people×8 $0.196 +
 ContactOut search $0.05 + Tomba domain-search $0.01 + competitors $0.01 +
-email-format $0.01). Fundable funding fallback adds **$0.462** on top for companies
-with thin CE funding data; this is NOT included in the upfront reservation (it fires
-on a minority of searches) — `reconcileSpend` handles the delta post-search.
-**Capacity under a hard $20 cap: ~55 searches/day** (ESTIMATE_USD ≈ $0.36 → ~55).
-Worst-case single search (Fundable fires): ~$0.82. To raise capacity: lower
+email-format $0.01 + Seltz ×6 $0.038). Fundable funding fallback adds **$0.462**
+on top for companies with thin CE funding data; this is NOT included in the upfront
+reservation (it fires on a minority of searches) — `reconcileSpend` handles the
+delta post-search.
+**Capacity under a hard $20 cap: ~50 searches/day** (ESTIMATE_USD ≈ $0.40 → ~50).
+Worst-case single search (Fundable fires): ~$0.86. To raise capacity: lower
 `EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or raise `DAILY_SPEND_CAP_USD`.
 
 **The ledger charges the REQUESTED CE page size, not the returned count** — CE bills
@@ -208,11 +210,19 @@ Reveals are billed on demand on top:
   (`"c-suite"`, not `"c_suite"` → 400). Not currently used, but kept as a gotcha.
 - **Spend ledger is in DOLLARS** — reserve/reconcile pass dollar amounts (per-call
   prices vary by provider). Don't revert to a flat per-call multiplier.
+- **GOTCHA: Seltz response shape.** Top-level key is `documents` (NOT `results`).
+  Each doc has `url`, `content`, `published_date` — **no `title` field**. Extract a
+  title from `content` by stripping markdown `#` headers and taking the first
+  meaningful line. Content has backslash-escaped markdown (`\\.`, `\\(` etc.) —
+  strip with `replace(/\\([^\\])/g, '$1')` before display. Mapper in `lib/seltz.ts`.
+  6 calls per search ($0.00625 each): 3 signal queries (funding/product/customer) +
+  2 job queries + 1 narrative query. All via `Promise.allSettled`; per-call cost
+  charged on success only. Stream sections: `signals`, `jobs`, `narrative`.
 - Mappers + raw shapes: `lib/companyenrich.ts` (enrich/workforce/people/email),
   `lib/contactout.ts` (people search discovery + reveal), `lib/tomba.ts` (similar +
   domain-search employee augment + email-format), `lib/fundable.ts` (funding-rounds
-  fallback, with sanity filter), `lib/format.ts` (`countryCode()` for CO full country
-  name → ISO-2).
+  fallback, with sanity filter), `lib/seltz.ts` (web signals/jobs/narrative),
+  `lib/format.ts` (`countryCode()` + `fmtMoney()`).
 - Data quality notes (from live testing 2026-06-23):
   - ContactOut skews toward recruiting/HR roles for large companies (recruiters are
     more LinkedIn-active). C-suite and engineering are present but less represented.

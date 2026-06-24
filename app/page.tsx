@@ -11,6 +11,8 @@ import type {
   FormatPattern,
   RevealResult,
   SearchError,
+  Signal,
+  JobSignal,
 } from '@/lib/types';
 import { ToastProvider } from '@/components/Toast';
 import CompanyCard, { CompanyCardSkeleton } from '@/components/CompanyCard';
@@ -18,6 +20,7 @@ import Tabs, { type TabId } from '@/components/Tabs';
 import EmployeesTab from '@/components/EmployeesTab';
 import DepartmentsTab from '@/components/DepartmentsTab';
 import CompetitorsTab from '@/components/CompetitorsTab';
+import SignalsTab from '@/components/SignalsTab';
 import dynamic from 'next/dynamic';
 import { type TraceStep } from '@/components/OrchestrationTrace';
 import LoadingScreen from '@/components/graph/LoadingScreen';
@@ -52,6 +55,12 @@ interface Report {
   employeesTotal: number;
   employeesLoading: boolean;
   employeesError: boolean;
+  signals: Signal[] | null;
+  signalsLoading: boolean;
+  signalsError: boolean;
+  jobs: JobSignal[] | null;
+  jobsLoading: boolean;
+  jobsError: boolean;
   cost: number;
   durationMs: number;
   emailFormat: FormatPattern[];
@@ -74,6 +83,12 @@ function freshReport(inputEcho: string): Report {
     employeesTotal: 0,
     employeesLoading: true,
     employeesError: false,
+    signals: null,
+    signalsLoading: true,
+    signalsError: false,
+    jobs: null,
+    jobsLoading: true,
+    jobsError: false,
     cost: 0,
     durationMs: 0,
     emailFormat: [],
@@ -121,6 +136,22 @@ function buildTrace(r: Report, done: boolean): TraceStep[] {
       ),
       count: r.competitors?.length ?? null,
       countLabel: 'companies',
+    },
+    {
+      key: 'signals',
+      label: 'Web signals',
+      hint: 'News · launches · customers',
+      status: status(r.signalsLoading, r.signalsError, !!r.signals && r.signals.length > 0),
+      count: r.signals?.length ?? null,
+      countLabel: 'signals',
+    },
+    {
+      key: 'jobs',
+      label: 'Hiring activity',
+      hint: 'Active job postings',
+      status: status(r.jobsLoading, r.jobsError, !!r.jobs && r.jobs.length > 0),
+      count: r.jobs?.length ?? null,
+      countLabel: 'postings',
     },
   ];
 }
@@ -176,6 +207,12 @@ export default function Home() {
       employeesTotal: SAMPLE.employees.length,
       employeesLoading: false,
       employeesError: false,
+      signals: null,
+      signalsLoading: false,
+      signalsError: false,
+      jobs: null,
+      jobsLoading: false,
+      jobsError: false,
       cost: 0,
       durationMs: 0,
       emailFormat: [{ format: '{first}.{last}', percentage: 98 }],
@@ -241,6 +278,15 @@ export default function Home() {
                 };
               case 'emailformat':
                 return { ...r, emailFormat: msg.patterns };
+              case 'signals':
+                return { ...r, signals: msg.data, signalsLoading: false, signalsError: !msg.data && !!msg.error };
+              case 'jobs':
+                return { ...r, jobs: msg.data, jobsLoading: false, jobsError: !msg.data && !!msg.error };
+              case 'narrative':
+                // Apply only when the current description is short or absent.
+                return r.company && (!r.company.description || r.company.description.length < 100)
+                  ? { ...r, company: { ...r.company, description: msg.description } }
+                  : r;
               case 'done':
                 return {
                   ...r,
@@ -249,6 +295,8 @@ export default function Home() {
                   workforceLoading: false,
                   competitorsLoading: false,
                   employeesLoading: false,
+                  signalsLoading: false,
+                  jobsLoading: false,
                 };
               default:
                 return r;
@@ -530,7 +578,8 @@ export default function Home() {
                 onChange={setActiveTab}
                 tabs={[
                   { id: 'employees', label: 'Employees', count: report.employees.length || null },
-                  { id: 'departments', label: 'Departments', count: report.workforce?.departments.length ?? null },
+                  { id: 'signals', label: 'Signals', count: report.signals?.length ?? null },
+                  { id: 'departments', label: 'Workforce & Hiring', count: report.workforce?.departments.length ?? null },
                   { id: 'competitors', label: 'Competitors', count: report.competitors?.length ?? null },
                 ]}
               />
@@ -550,9 +599,17 @@ export default function Home() {
                     domain={report.domain}
                   />
                 )}
+                {activeTab === 'signals' && (
+                  <SignalsTab
+                    signals={report.signals}
+                    loading={report.signalsLoading}
+                    error={report.signalsError}
+                  />
+                )}
                 {activeTab === 'departments' && (
                   <DepartmentsTab
                     workforce={report.workforce}
+                    jobs={report.jobs}
                     onPickDepartment={(d) => {
                       setForcedDept(d);
                       setActiveTab('employees');

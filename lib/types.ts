@@ -105,6 +105,23 @@ export interface Employee {
   source?: 'company-enrich' | 'contactout' | 'tomba';
 }
 
+/** A web signal (news, product launch, customer mention) from Seltz search. */
+export interface Signal {
+  url: string;
+  title: string | null;
+  snippet: string | null;
+  source: string | null; // hostname without www
+  category: 'funding' | 'product' | 'customer' | 'general';
+}
+
+/** A job posting link from Seltz search — shown in the Departments tab. */
+export interface JobSignal {
+  url: string;
+  title: string | null;
+  snippet: string | null;
+  source: string | null;
+}
+
 // NDJSON stream message types emitted by /api/search
 export type StreamMessage =
   | { type: 'meta'; domain: string; resolvedFrom?: string | null }
@@ -113,6 +130,9 @@ export type StreamMessage =
   | { type: 'competitors'; data: Competitor[] | null; error?: string }
   | { type: 'employees'; data: Employee[]; totalAvailable: number; error?: string }
   | { type: 'emailformat'; patterns: FormatPattern[] }
+  | { type: 'signals'; data: Signal[] | null; error?: string }
+  | { type: 'jobs'; data: JobSignal[] | null; error?: string }
+  | { type: 'narrative'; description: string }
   // Aborts the report mid-stream and shows a full-screen error (e.g. the
   // Orthogonal key hit its limit, so every section is failing the same way).
   | { type: 'fatal'; error: SearchError['error'] }
