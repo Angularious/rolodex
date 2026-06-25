@@ -5,7 +5,9 @@
 const ORTHOGONAL_URL = 'https://api.orth.sh/v1/run';
 // Kept under Vercel's serverless function ceiling so a slow upstream call is
 // aborted by us (clean per-section error) rather than killed by the platform.
-const TIMEOUT_MS = 9000;
+// 13s: two attempts (26s) fit inside Vercel's 30s limit; 9s was too tight and
+// caused systematic retries when Orthogonal's proxy takes 10-12s.
+const TIMEOUT_MS = 13000;
 
 export class OrthogonalError extends Error {
   status: number;

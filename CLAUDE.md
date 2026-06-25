@@ -22,12 +22,29 @@ Orthogonal-owned branding.
     as primary source alongside CE; all three (CE + ContactOut + Tomba) fire in parallel;
     display cap raised 30→50; confidence badges per row; Tomba domain-contamination fix;
     admin auth hardened to header-only.
+  - **Post-PR #20 commits (2026-06-24, on main):**
+    - `a989561`: Fundable cost optimization, ContactOut 2-page parallel, CE page_size 8→5,
+      description expand/collapse in CompanyCard (table view).
+    - `68c61b3`: Company card skeleton fix — 6s `Promise.race` timeout around `augmentFunding`
+      + client-side EOF settlement so skeleton never hangs forever when stream is cut.
+    - `ef1e564`: SummaryView — description expand/collapse (>165 chars), single LAST RAISE
+      row (most recent Fundable round only, replaces multi-round accordion), Fundable
+      PAGE_SIZE 1→4 for reliable newest-round retrieval.
+    - `7bfada2`: Fundable PAGE_SIZE confirmed at 4 (cost $0.264/call).
+    - `722577a`: SummaryView — funding row detail expansion (valuation + investors +
+      narrative from Fundable), News tab (5th tab, #fb923c) pulling Seltz signals;
+      `Signal.description` added to `FundingRound` type; `lib/fundable.ts` maps
+      `deal_descriptions.short_description`.
+- **Pending UI work:**
+  - **Graph View** (`components/circuit/`) needs significant UI improvements — the
+    circuit-schematic visual, drill-down UX, and detail panels are functional but rough.
+    This is the next major area of focus.
 - **Cap value:** global cap is whatever `DAILY_SPEND_CAP_USD` is set to in Vercel
   (intent is **$20**). Layered beneath it: per-IP `PER_IP_DAILY_USD` ($5) + per-session
   `SESSION_DAILY_USD` ($3).
 - **Env knobs (Vercel; all have safe code defaults so none are strictly required):**
   spend `DAILY_SPEND_CAP_USD` / `PER_IP_DAILY_USD` (5) / `SESSION_DAILY_USD` (3); rate
-  `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY` (30/300/1000); `EMPLOYEE_PAGE_SIZE` (8);
+  `RATE_PER_MIN`/`RATE_PER_HOUR`/`RATE_PER_DAY` (30/300/1000); `EMPLOYEE_PAGE_SIZE` (5);
   `EMPLOYEE_LIST_MAX` (50); `SESSION_SECRET` (falls back to `IP_HASH_SALT`); `SITE_ID`
   (defaults `'rolodex'`). **`DM_PAGE_SIZE` is obsolete — decision-makers section
   removed.** **Vercel binds env to a deployment, so editing ANY of these
@@ -57,17 +74,24 @@ the user's keys; it's already gitignore'd so it never gets committed.
   The company-profile job falls back to `GET /companies?id=` (id from the workforce
   response) if `GET /companies/enrich?domain=` fails. **Funding fallback:** if the
   resolved profile has no round-level funding detail, the company job pulls
-  the most recent round from **Fundable** (`/company/deals`, $0.066 × 1 round = $0.066)
+  the 4 most recent rounds from **Fundable** (`/company/deals`, $0.066 × 4 = **$0.264**)
   and merges them in before emitting `company`. **Thin = no rounds OR rounds present
   but none carry a dollar amount** (CE often returns round types/dates/investors
-  with `amount: null`). Fundable is domain-addressed directly; mapper in `lib/fundable.ts`.
-  **Employee discovery (3-source, all fire in parallel):**
+  with `amount: null`). PAGE_SIZE=4 (not 1) ensures a newest-first sort reliably
+  finds a round with an amount even when Fundable returns oldest-first on page 0.
+  Fundable is domain-addressed directly; mapper in `lib/fundable.ts`.
+  **Fundable augment is capped at 6s** via `Promise.race` — if Fundable is slow/
+  failing the company card emits CE data immediately rather than blocking 18s.
+  **Employee discovery (3-source, waterfall):**
+  CE + Tomba always fire in parallel. ContactOut fires **only when CE returns < 15
+  employees** (saves $0.05 on CE-rich companies like stripe/google where CE already
+  has good coverage). ContactOut is capped at 1 page (25 profiles, $0.05).
   1. **CE `/people/search`** (`lib/companyenrich.ts`) — LinkedIn-verified profiles with
      `ceId` for cheap email reveals ($0.0245/person, billed on REQUESTED page size not
      returned count). `source:'company-enrich'`.
   2. **ContactOut `/v1/people/search`** (`lib/contactout.ts`) — $0.05/page, 25
-     profiles/page. **Two pages fired in parallel** for up to 50 profiles ($0.10
-     total). Domain-scoped at the API level (confirmed: `plaid.co.jp` and `plaid.com`
+     profiles/page. **Conditional: fires only when CE < 15 employees** (1 page max,
+     $0.05). Domain-scoped at the API level (confirmed: `plaid.co.jp` and `plaid.com`
      return distinct result sets). `source:'contactout'`. Investor/board/advisor
      titles filtered via `SKIP_CO_TITLE`. Empty-string seniority normalized to null.
      Single-char last names ("Paul D") dropped — ContactOut uses these when the full
@@ -135,6 +159,19 @@ the user's keys; it's already gitignore'd so it never gets committed.
     `employees`/`employeesTotal`). `components/graph/LoadingScreen.tsx` + `sample.ts`
     (powers free **`/?demo=1`**) are retained. Animations are `.circ-*` in `globals.css`.
     **UI never names providers** — the panel Source row says "Orthogonal".
+- **`SummaryView`** (`components/SummaryView.tsx`) is the **default view** (purple/retro
+  aesthetic, not circuit). Five tabs: Employees · Departments · Competitors · Funding · News.
+  - **Company card**: description expand/collapse toggle at >165 chars. Triggers on
+    `descExpanded` state; mirrors CompanyCard (table view) behavior.
+  - **Funding tab**: single LAST RAISE row (`fundingRounds[0]`, newest-first after
+    Fundable sort). Expandable via `▼` chevron when Fundable detail exists — panel shows
+    valuation, investors (parsed from deal narrative), and short description. CE-only
+    rounds with no Fundable data show as a static row (no chevron).
+  - **News tab** (`tab === 'signals'`): renders Seltz signals already in the in-memory
+    report — no extra fetch. Color-coded category badge (FUNDING/PRODUCT/CUSTOMER/GENERAL),
+    source hostname, title, 3-line-clamped snippet, links out to article. `SignalsPane`
+    component defined inline at end of file with `SIGNAL_COLOR` map.
+  - `SummaryData` interface must stay in sync with its call site in `app/page.tsx`.
 - **`OrchestrationTrace`** (`components/OrchestrationTrace.tsx`) shows the data
   operations resolving live (running → done/empty/failed + counts, summary on done)
   to make the multi-step orchestration visible. Derived purely from client section
@@ -159,15 +196,16 @@ Every search and every reveal is a fresh fetch. There is no result cache and no
 in-flight dedup. Supabase stores ONLY our own usage metadata: rate-limit events,
 spend ledger, analytics. **Do not re-introduce caching of provider responses.**
 
-Cost: ≈ **$0.39/search** (profile $0.012 + workforce $0.061 + CE people×5 $0.1225 +
-ContactOut ×2 pages $0.10 + Tomba domain-search $0.01 + competitors $0.01 +
-email-format $0.01 + Seltz ×6 $0.038). Fundable funding fallback adds **$0.066**
-on top for companies with thin CE funding data (fetches only the most recent round —
-amount + date + type + investors). NOT included in the upfront reservation (fires on
-a minority of searches) — `reconcileSpend` handles the delta.
-**Capacity under a hard $20 cap: ~51 searches/day** (ESTIMATE_USD ≈ $0.39 → ~51).
-Worst-case single search (Fundable fires): ~$0.46. To raise capacity: lower
-`EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or raise `DAILY_SPEND_CAP_USD`.
+Cost: ≈ **$0.326/search worst-case** (profile $0.0245 + workforce $0.061 + CE people×5
+$0.1225 + ContactOut ×1 page $0.05 [conditional — fires only when CE < 15] + Tomba
+domain-search $0.01 + competitors $0.01 + email-format $0.01 + Seltz ×6 $0.0375).
+Typical cost when CE is rich (CO skipped): **≈$0.276/search**. Fundable fallback adds
+**$0.264** on top for companies with thin CE funding data. NOT in the upfront
+reservation — `reconcileSpend` handles the delta.
+**Capacity under a hard $20 cap: ~61 searches/day worst-case, ~72 typical**
+(ESTIMATE_USD ≈ $0.326). Worst-case single search (Fundable fires + CO fires): ~$0.59.
+To raise capacity: lower `EMPLOYEE_PAGE_SIZE` (each unit saves $0.0245) or raise
+`DAILY_SPEND_CAP_USD`.
 
 **The ledger charges the REQUESTED CE page size, not the returned count** — CE bills
 on requested page size, so charging the returned count let the hard cap pass

@@ -60,7 +60,7 @@ const PRICE = {
   fundableFunding: FUNDABLE_COST, // fundable /company/deals (funding fallback, 4 rounds)
   tombaEmployees: 0.01, // tomba /v1/domain-search (always fires, flat)
   emailFormat: 0.01, // tomba /v1/email-format (domain email pattern)
-  contactoutSearch: 0.05, // contactout /v1/people/search (per page, 25 profiles; 2 pages fired)
+  contactoutSearch: 0.05, // contactout /v1/people/search (per page, 25 profiles; waterfall — fires only when CE < 15)
   seltz: SELTZ_COST, // seltz /v1/search (per call, $0.00625)
 };
 
@@ -76,7 +76,7 @@ const ESTIMATE_USD =
   PRICE.competitors +
   PRICE.tombaEmployees + // employee-list augment (flat, always fires)
   PRICE.emailFormat + // domain email pattern (flat, always fires)
-  PRICE.contactoutSearch * 2 + // 2 CO pages × $0.05 (always fires)
+  PRICE.contactoutSearch * 1 + // 1 CO page × $0.05 (waterfall: fires only when CE returns < 15 employees)
   PRICE.seltz * 6; // seltz: 3 signals + 2 jobs + 1 narrative (always fires)
 
 function errorResponse(err: SearchError, status: number): Response {
@@ -291,14 +291,15 @@ export async function POST(req: NextRequest) {
             write({ type: 'workforce', data: null, error: 'unavailable' });
           }),
         (async () => {
-          // Fire all three employee sources in parallel.
+          // Waterfall employee discovery:
+          // 1. CE + Tomba always fire in parallel (cheap, high-quality).
+          // 2. ContactOut fires only when CE returns fewer than 15 employees —
+          //    saves $0.05 on CE-rich companies (stripe, google, etc.).
           let company = preResolvedCompany?.name || domain.split('.')[0];
           if (company.length < 3) company = domain; // Tomba requires 3-75 chars
 
-          const [ceRaw, coRaw1, coRaw2, tombaRaw] = await Promise.allSettled([
+          const [ceRaw, tombaRaw] = await Promise.allSettled([
             peopleSearch(domain, PAGE_SIZE),
-            coSearch(domain, 1),
-            coSearch(domain, 2),
             domainSearch(domain, company, 50),
           ]);
 
@@ -314,18 +315,6 @@ export async function POST(req: NextRequest) {
             noteQuota(ceRaw.reason);
           }
 
-          // ContactOut: flat $0.05 per page (25 profiles/page). Fire 2 pages in
-          // parallel for up to 50 profiles. Charge only for successful pages.
-          let coEmployees: import('@/lib/types').Employee[] = [];
-          for (const coRaw of [coRaw1, coRaw2]) {
-            if (coRaw.status === 'fulfilled') {
-              spentUsd += PRICE.contactoutSearch;
-              coEmployees = coEmployees.concat(mapContactOutPeople(coRaw.value));
-            } else {
-              noteQuota(coRaw.reason);
-            }
-          }
-
           // Tomba: flat $0.01 for up to 50 domain emails. Pass domain so the mapper
           // can drop emails from same-named companies at a different TLD.
           let tombaEmployees: import('@/lib/types').Employee[] = [];
@@ -334,6 +323,19 @@ export async function POST(req: NextRequest) {
             tombaEmployees = mapTombaEmployees(tombaRaw.value, domain);
           } else {
             noteQuota(tombaRaw.reason);
+          }
+
+          // ContactOut: $0.05 flat for 25 profiles. Skip when CE already returned
+          // enough coverage (≥15 employees) — those are high-quality CE rows anyway.
+          let coEmployees: import('@/lib/types').Employee[] = [];
+          if (ceEmployees.length < 15) {
+            const [coRaw] = await Promise.allSettled([coSearch(domain, 1)]);
+            if (coRaw.status === 'fulfilled') {
+              spentUsd += PRICE.contactoutSearch;
+              coEmployees = mapContactOutPeople(coRaw.value);
+            } else {
+              noteQuota(coRaw.reason);
+            }
           }
 
           const merged = mergeAllEmployees(ceEmployees, coEmployees, tombaEmployees, EMPLOYEE_DISPLAY_MAX);
