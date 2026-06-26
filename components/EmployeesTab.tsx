@@ -6,7 +6,7 @@ import { applyEmailFormat } from '@/lib/email';
 import { countryName } from '@/lib/format';
 import { useToast } from './Toast';
 import { SectionError } from './DepartmentsTab';
-import { Avatar } from './DecisionMakersTab';
+import { Avatar } from './Avatar';
 
 function tenureLabel(startedAt?: string | null): string | null {
   if (!startedAt) return null;
@@ -37,7 +37,7 @@ const SENIORITY_RANK: Record<string, number> = {
 const SOURCE_LABEL: Record<EmailHit['source'], string> = {
   'company-enrich': 'verified',
   'apollo': 'likely',
-  'contactout': 'likely',
+  'contactout': 'verified',
 };
 
 // Confidence badge per employee row (source → capability label, no provider names).

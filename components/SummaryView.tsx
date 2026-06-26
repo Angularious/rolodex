@@ -8,7 +8,7 @@ import { useState, useCallback } from 'react';
 import type { Company, Competitor, Workforce, Employee, Signal } from '@/lib/types';
 import type { RevealFn } from '@/components/EmployeesTab';
 import { CIRCUIT_COLOR } from '@/components/circuit/geometry';
-import { Avatar } from '@/components/DecisionMakersTab';
+import { Avatar } from '@/components/Avatar';
 import { useToast } from '@/components/Toast';
 
 const FONT = 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)';

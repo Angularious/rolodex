@@ -136,6 +136,15 @@ body {
 .retro-btn-blue:hover {
   background: var(--accent-soft);
 }
+/* Card-edge glow — matches company data card aesthetic */
+.retro-btn-panel {
+  border: 1px solid rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.45), 0 0 3px rgba(96, 165, 250, 0.3);
+}
+.retro-btn-panel:hover {
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.6), 0 0 6px rgba(96, 165, 250, 0.4);
+}
 /* Ghost / outline variant */
 .retro-btn-red,
 .retro-btn-ghost {

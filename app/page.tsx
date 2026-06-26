@@ -37,7 +37,6 @@ import ErrorScreen from '@/components/ErrorScreen';
 import Footer from '@/components/Footer';
 import FieldBackground from '@/components/FieldBackground';
 
-const EXAMPLES = ['stripe.com', 'google.com', 'spacex.com', 'figma.com'];
 
 interface Report {
   domain: string;
@@ -414,7 +413,7 @@ export default function Home() {
       <div className="min-h-screen flex flex-col">
         {/* Header — always translucent glass so the animated dot field shows through.
             Circuit-themed: subtle neon bottom trace. */}
-        <header className="sticky top-0 z-30 bg-black/25 backdrop-blur-md border-b border-[#22d3ee]/12">
+        <header className="sticky top-0 z-30 bg-transparent">
           <div className={`${showReport ? 'px-6' : 'mx-auto max-w-6xl px-5'} h-[56px] flex items-center gap-4`}>
             {/* Left col: logo */}
             <div className="shrink-0">
@@ -441,7 +440,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={status === 'searching'}
-                    className="retro-btn retro-btn-blue retro-btn-sm whitespace-nowrap"
+                    className="retro-btn retro-btn-blue retro-btn-sm retro-btn-panel whitespace-nowrap"
                   >
                     {status === 'searching' ? 'Scanning…' : 'Run →'}
                   </button>
@@ -500,23 +499,6 @@ export default function Home() {
               </button>
             </form>
 
-            {status === 'idle' && (
-              <div className="mt-5 flex flex-wrap gap-2 justify-center items-center rise">
-                <span className="hud mr-1">Try</span>
-                {EXAMPLES.map((ex) => (
-                  <button
-                    key={ex}
-                    onClick={() => {
-                      setInput(ex);
-                      requestSearch(ex);
-                    }}
-                    className="retro-btn retro-btn-ghost retro-btn-sm font-mono"
-                  >
-                    {ex}
-                  </button>
-                ))}
-              </div>
-            )}
           </section>
           )}
 
