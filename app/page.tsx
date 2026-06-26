@@ -421,7 +421,7 @@ export default function Home() {
                 onClick={reset}
                 className="font-display text-base tracking-tight flex items-center gap-2 text-cream"
               >
-                <span className="text-accent">◇</span>
+                <span style={{ color: '#22d3ee' }}>◇</span>
                 <span className="hidden sm:inline">COMPANY ROLODEX</span>
               </button>
             </div>
@@ -431,8 +431,21 @@ export default function Home() {
               {showReport && (
                 <form onSubmit={onSubmit} className="w-full max-w-lg flex items-center gap-2">
                   <input
-                    className="retro-input border-line bg-card py-1.5 text-sm focus:shadow-none"
-                    placeholder="company domain or name"
+                    style={{
+                      flex: 1,
+                      background: 'rgba(8,11,20,0.8)',
+                      border: '1px solid rgba(34,211,238,0.25)',
+                      outline: 'none',
+                      fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)',
+                      fontSize: 12,
+                      color: '#cfdcea',
+                      letterSpacing: '0.04em',
+                      padding: '6px 12px',
+                      borderRadius: 2,
+                      backdropFilter: 'blur(8px)',
+                      minWidth: 0,
+                    }}
+                    placeholder="_ domain or company name"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     spellCheck={false}
@@ -440,9 +453,32 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={status === 'searching'}
-                    className="retro-btn retro-btn-blue retro-btn-sm retro-btn-panel whitespace-nowrap"
+                    style={{
+                      position: 'relative',
+                      padding: '6px 16px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.18em',
+                      cursor: status === 'searching' ? 'not-allowed' : 'pointer',
+                      border: '1px solid #22d3ee',
+                      background: 'rgba(34,211,238,0.1)',
+                      backdropFilter: 'blur(8px)',
+                      WebkitBackdropFilter: 'blur(8px)',
+                      color: '#22d3ee',
+                      boxShadow: '0 0 14px rgba(34,211,238,0.28), inset 0 0 8px rgba(34,211,238,0.04)',
+                      fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s',
+                      opacity: status === 'searching' ? 0.5 : 1,
+                      borderRadius: 2,
+                      userSelect: 'none',
+                    }}
                   >
-                    {status === 'searching' ? 'Scanning…' : 'Run →'}
+                    <span style={{ position:'absolute', top:-1, left:-1, width:7, height:7, borderTop:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+                    <span style={{ position:'absolute', top:-1, right:-1, width:7, height:7, borderTop:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
+                    <span style={{ position:'absolute', bottom:-1, left:-1, width:7, height:7, borderBottom:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+                    <span style={{ position:'absolute', bottom:-1, right:-1, width:7, height:7, borderBottom:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
+                    {status === 'searching' ? 'SCANNING···' : 'RUN →'}
                   </button>
                 </form>
               )}
@@ -455,9 +491,31 @@ export default function Home() {
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => fetch('/api/track', { method: 'POST' }).catch(() => {})}
-                className="font-mono text-[0.62rem] uppercase tracking-[0.16em] rounded-full border border-line px-2.5 py-1 text-cream-dim hover:text-cream hover:border-cream-dim transition-colors whitespace-nowrap"
+                style={{
+                  position: 'relative',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '5px 12px',
+                  fontSize: 10,
+                  fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)',
+                  fontWeight: 700,
+                  letterSpacing: '0.18em',
+                  color: 'rgba(34,211,238,0.55)',
+                  border: '1px solid rgba(34,211,238,0.2)',
+                  background: 'rgba(8,11,20,0.6)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  borderRadius: 2,
+                  whiteSpace: 'nowrap' as const,
+                  textDecoration: 'none',
+                  transition: 'all 0.2s',
+                }}
               >
-                <span className="hidden md:inline">Powered by </span>orthogonal.com ↗
+                <span style={{ position:'absolute', top:-1, left:-1, width:6, height:6, borderTop:'1px solid rgba(34,211,238,0.5)', borderLeft:'1px solid rgba(34,211,238,0.5)', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', top:-1, right:-1, width:6, height:6, borderTop:'1px solid rgba(34,211,238,0.5)', borderRight:'1px solid rgba(34,211,238,0.5)', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', bottom:-1, left:-1, width:6, height:6, borderBottom:'1px solid rgba(34,211,238,0.5)', borderLeft:'1px solid rgba(34,211,238,0.5)', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', bottom:-1, right:-1, width:6, height:6, borderBottom:'1px solid rgba(34,211,238,0.5)', borderRight:'1px solid rgba(34,211,238,0.5)', pointerEvents:'none' }} />
+                ORTHOGONAL.COM ↗
               </a>
             </div>
           </div>
@@ -473,29 +531,85 @@ export default function Home() {
           {/* Search — landing only; in results it lives in the header bar */}
           {status === 'idle' && (
             <section className="text-center py-20 sm:py-28">
-              <p className="hud mb-6 rise text-legible">Company intelligence · powered by Orthogonal</p>
-              <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-6 rise text-legible">
-                Company <em>Rolodex</em>
+              <p className="hud mb-5 rise text-legible" style={{ color: 'rgba(34,211,238,0.7)', letterSpacing: '0.22em' }}>
+                ◈ COMPANY INTELLIGENCE · ORTHOGONAL API
+              </p>
+              <h1 className="font-serif-hero text-[clamp(46px,8.6vw,104px)] text-cream max-w-[15ch] mx-auto mb-5 rise text-legible">
+                Company <em style={{ color: '#22d3ee', fontStyle: 'italic' }}>Rolodex</em>
               </h1>
-              <p className="text-cream-dim text-base sm:text-lg max-w-xl mx-auto mb-10 rise text-legible">
-                Type a company domain or name. Get an instant intelligence report — profile,
-                departments, locations, competitors, and people.
+              <p className="rise text-legible mx-auto mb-10" style={{ fontFamily: 'var(--font-mono, ui-monospace)', fontSize: 11, color: 'rgba(74,127,165,0.85)', letterSpacing: '0.14em', maxWidth: 520 }}>
+                PROFILE · FUNDING · TECH STACK · DEPARTMENTS · COMPETITORS · PEOPLE
               </p>
 
             <form
               onSubmit={onSubmit}
-              className="retro-panel p-2 max-w-2xl mx-auto flex flex-col sm:flex-row gap-2 rise"
+              style={{
+                position: 'relative',
+                maxWidth: 600,
+                margin: '0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 6px 6px 18px',
+                background: 'rgba(8,11,20,0.8)',
+                border: '1px solid rgba(34,211,238,0.3)',
+                backdropFilter: 'blur(14px)',
+                WebkitBackdropFilter: 'blur(14px)',
+                boxShadow: '0 0 24px rgba(34,211,238,0.08)',
+                borderRadius: 3,
+              }}
+              className="rise"
             >
+              <span style={{ position:'absolute', top:-1, left:-1, width:10, height:10, borderTop:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+              <span style={{ position:'absolute', top:-1, right:-1, width:10, height:10, borderTop:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
+              <span style={{ position:'absolute', bottom:-1, left:-1, width:10, height:10, borderBottom:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+              <span style={{ position:'absolute', bottom:-1, right:-1, width:10, height:10, borderBottom:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
               <input
-                className="retro-input border-transparent bg-transparent focus:shadow-none"
-                placeholder="google.com  or  SpaceX"
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)',
+                  fontSize: 14,
+                  color: '#cfdcea',
+                  letterSpacing: '0.04em',
+                  minWidth: 0,
+                }}
+                placeholder="_ domain or company name"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 autoFocus
                 spellCheck={false}
               />
-              <button type="submit" className="retro-btn retro-btn-blue whitespace-nowrap">
-                Run report →
+              <button
+                type="submit"
+                style={{
+                  position: 'relative',
+                  padding: '8px 20px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.18em',
+                  cursor: 'pointer',
+                  border: '1px solid #22d3ee',
+                  background: 'rgba(34,211,238,0.1)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  color: '#22d3ee',
+                  boxShadow: '0 0 14px rgba(34,211,238,0.28)',
+                  fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, monospace)',
+                  whiteSpace: 'nowrap' as const,
+                  transition: 'all 0.2s',
+                  borderRadius: 2,
+                  userSelect: 'none' as const,
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{ position:'absolute', top:-1, left:-1, width:7, height:7, borderTop:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', top:-1, right:-1, width:7, height:7, borderTop:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', bottom:-1, left:-1, width:7, height:7, borderBottom:'2px solid #22d3ee', borderLeft:'2px solid #22d3ee', pointerEvents:'none' }} />
+                <span style={{ position:'absolute', bottom:-1, right:-1, width:7, height:7, borderBottom:'2px solid #22d3ee', borderRight:'2px solid #22d3ee', pointerEvents:'none' }} />
+                RUN REPORT →
               </button>
             </form>
 
